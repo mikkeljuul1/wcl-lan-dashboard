@@ -48,14 +48,16 @@ def _get_user_id() -> int | None:
 
 
 # Very small in-memory "session" — which report code is currently tracked.
+# ``WCL_REPORT_CODE`` acts as a *fallback* seed only; ``WCL_USER_ID`` — when
+# set — always wins so the dashboard auto-tracks the user's newest upload.
+# ``manual_override`` is flipped to True only when a user explicitly POSTs a
+# code to ``/api/session``.
 _state: dict[str, Any] = {
     "report_code": os.environ.get("WCL_REPORT_CODE", "").strip(),
     # Cache of the most recent report code resolved from WCL_USER_ID.
     "auto_code": "",
     "auto_checked_at": 0.0,
-    # Set to True once the user explicitly picks a report via /api/session,
-    # which pins tracking to that code until they clear it.
-    "manual_override": bool((os.environ.get("WCL_REPORT_CODE") or "").strip()),
+    "manual_override": False,
 }
 
 # Re-check WCL for a newer report at most this often (seconds).
