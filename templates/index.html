@@ -35,13 +35,6 @@
       <label><input type="checkbox" class="role-toggle" value="Healer" checked /> Healers</label>
       <label><input type="checkbox" class="role-toggle" value="Tank" checked /> Tanks</label>
     </fieldset>
-    <fieldset class="role-filter">
-      <legend class="sr-only">Parse metric</legend>
-      <label title="Item-level bracket parses (completed/timed runs only).">
-        <input type="checkbox" id="bracket-toggle" />
-        Item-level bracket parses
-      </label>
-    </fieldset>
   </nav>
 
   <main id="main" class="layout">
@@ -57,6 +50,7 @@
         <p id="latest-title" class="meta"></p>
       </header>
       <p class="big-number" id="latest-average">—</p>
+      <p class="sub" id="latest-sub"></p>
       <div id="latest-players"></div>
     </section>
 

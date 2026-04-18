@@ -149,6 +149,7 @@ body {
   font-variant-numeric: tabular-nums;
 }
 .sub { color: var(--muted); margin: 0.25rem 0 0; }
+.key-inline { font-variant-numeric: tabular-nums; font-weight: 600; }
 
 /* Player grid ----------------------------------------------------------- */
 .player-grid {
@@ -169,7 +170,19 @@ body {
 }
 .player .name { font-weight: 600; }
 .player .role { color: var(--muted); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.04em; }
-.player .parse { font-weight: 700; font-variant-numeric: tabular-nums; font-size: 1.05rem; }
+.player .parses {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.1rem;
+}
+.player .parse { font-weight: 700; font-variant-numeric: tabular-nums; font-size: 1.05rem; line-height: 1.1; }
+.player .parse.key-parse { font-size: 0.85rem; font-weight: 600; opacity: 0.9; }
+.player .parse.key-parse::before {
+  content: "Key ";
+  color: var(--muted);
+  font-weight: 500;
+}
 .player .amount {
   grid-column: 2;
   justify-self: end;
@@ -226,7 +239,19 @@ body {
 .dungeon .title .badge.key { background: #483a1a; color: var(--accent); }
 .dungeon .title .badge.kill { background: #1f3a24; color: var(--good); }
 .dungeon .title .badge.wipe { background: #3a1f1f; color: var(--bad); }
-.dungeon .avg { font-size: 1.5rem; font-weight: 700; color: var(--accent); font-variant-numeric: tabular-nums; }
+.dungeon .avg { font-size: 1.5rem; font-weight: 700; color: var(--accent); font-variant-numeric: tabular-nums; line-height: 1.1; }
+.dungeon .avg.key-parse { font-size: 0.9rem; font-weight: 600; opacity: 0.9; }
+.dungeon .avg.key-parse::before {
+  content: "Key ";
+  color: var(--muted);
+  font-weight: 500;
+}
+.avg-pair {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.1rem;
+}
 .dungeon .when {
   grid-column: 1 / -1;
   padding: 0 1rem 0.5rem 1rem;
