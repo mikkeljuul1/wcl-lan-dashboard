@@ -121,16 +121,23 @@ def _merge_table(fight: dict[str, Any], tables: dict[str, Any] | None) -> None:
 
     duration_ms = fight.get("duration") or 0
 
-    def _entries(key: str) -> dict[str, dict[str, Any]]:
+    def _table_data(key: str) -> dict[str, Any]:
         table = tables.get(key)
         if not isinstance(table, dict):
             return {}
-        data = table.get("data") or {}
+        return table.get("data") or {}
+
+    def _entries(data: dict[str, Any]) -> dict[str, dict[str, Any]]:
         entries = data.get("entries") or []
         return {e.get("name"): e for e in entries if isinstance(e, dict) and e.get("name")}
 
-    dmg_by_name = _entries("damage")
-    heal_by_name = _entries("healing")
+    dmg_data = _table_data("damage")
+    heal_data = _table_data("healing")
+    dmg_by_name = _entries(dmg_data)
+    heal_by_name = _entries(heal_data)
+    # WCL's table DPS/HPS columns are based on table totalTime, not activeTime.
+    dmg_total_time = dmg_data.get("totalTime") or duration_ms
+    heal_total_time = heal_data.get("totalTime") or duration_ms
 
     for c in chars:
         name = c.get("name")
@@ -138,12 +145,10 @@ def _merge_table(fight: dict[str, Any], tables: dict[str, Any] | None) -> None:
         h = heal_by_name.get(name) or {}
         dmg_total = d.get("total") or 0
         heal_total = h.get("total") or 0
-        active_dmg = d.get("activeTime") or duration_ms
-        active_heal = h.get("activeTime") or duration_ms
         c["damageDone"] = dmg_total or None
         c["healingDone"] = heal_total or None
-        c["dps"] = round(dmg_total / (active_dmg / 1000), 1) if dmg_total and active_dmg else None
-        c["hps"] = round(heal_total / (active_heal / 1000), 1) if heal_total and active_heal else None
+        c["dps"] = round(dmg_total / (dmg_total_time / 1000), 1) if dmg_total and dmg_total_time else None
+        c["hps"] = round(heal_total / (heal_total_time / 1000), 1) if heal_total and heal_total_time else None
 
 
 # Specs that determine role without knowing the class.
