@@ -180,28 +180,37 @@ class WCLClient:
 
     def get_ilvl_bracket_parses(
         self,
-        code: str,
         lookups: list[dict[str, Any]],
     ) -> dict[tuple[int, int], float]:
-        """Return ilvl-bracket percentile for each (characterId, fightID).
+        """Return ilvl-bracket percentile for each (characterId, fightId).
 
-        ``lookups`` items are dicts with keys ``characterId``, ``encounterId``,
-        ``fightId`` and ``metric`` ("dps" | "hps"). One GraphQL request is
-        issued per unique (characterId, metric) pair, aliasing one
-        ``encounterRankings`` field per encounter the character played.
-        ``rankPercent`` on matching rank entries is WCL's ilvl-bracket parse
-        (same as ``?bybracket=1`` on the character page).
+        ``lookups`` items are dicts with keys:
+          * ``characterId`` (int) — WCL character id
+          * ``encounterId`` (int)
+          * ``fightId``     (int) — the fight id within the *session* report
+          * ``absStartTime``(int) — absolute epoch ms when the fight began
+          * ``metric``      (str) — "dps" | "hps"
+
+        One GraphQL request is issued per unique (characterId, metric) pair,
+        aliasing one ``encounterRankings`` field per encounter the character
+        played. We match by absolute ``startTime`` (±60 s tolerance) because
+        each player uploads their own WCL report for the same M+ run, so the
+        ``report.code`` on their personal rank entries will differ from the
+        session report's code.
         """
-        code = extract_report_code(code)
         # Group by (character_id, metric) -> set of encounter_ids
         grouped: dict[tuple[int, str], set[int]] = {}
+        per_fight: dict[tuple[int, int], int] = {}  # (character_id, fight_id) -> abs start ms
         for lk in lookups:
             cid = lk.get("characterId")
             eid = lk.get("encounterId")
+            fid = lk.get("fightId")
+            abs_start = lk.get("absStartTime")
             metric = lk.get("metric") or "dps"
-            if not isinstance(cid, int) or not isinstance(eid, int):
+            if not all(isinstance(v, int) for v in (cid, eid, fid, abs_start)):
                 continue
             grouped.setdefault((cid, metric), set()).add(eid)
+            per_fight[(cid, fid)] = abs_start
 
         out: dict[tuple[int, int], float] = {}
         for (cid, metric), enc_ids in grouped.items():
@@ -228,20 +237,26 @@ class WCLClient:
                 # One bad character shouldn't break the whole dashboard.
                 continue
             char = ((data.get("characterData") or {}).get("character")) or {}
+            # Build list of (fight_id, abs_start) expected for this character.
+            wanted = [
+                (fid, abs_start)
+                for (c, fid), abs_start in per_fight.items()
+                if c == cid
+            ]
             for eid in enc_ids:
                 er = char.get(f"e{eid}") or {}
-                ranks = er.get("ranks") or []
-                for rk in ranks:
-                    report_info = rk.get("report") or {}
-                    if report_info.get("code") != code:
+                for rk in (er.get("ranks") or []):
+                    rk_start = rk.get("startTime")
+                    if not isinstance(rk_start, (int, float)):
                         continue
-                    fid = report_info.get("fightID")
-                    if not isinstance(fid, int):
-                        continue
-                    pct = rk.get("rankPercent")
-                    if isinstance(pct, (int, float)):
-                        # Keep best percent if the same fight appears twice.
-                        prev = out.get((cid, fid))
-                        if prev is None or pct > prev:
-                            out[(cid, fid)] = float(pct)
+                    for fid, abs_start in wanted:
+                        # 60 s tolerance — logs from different players can
+                        # differ by a few hundred ms (combat start timestamp).
+                        if abs(rk_start - abs_start) <= 60_000:
+                            pct = rk.get("rankPercent")
+                            if isinstance(pct, (int, float)):
+                                prev = out.get((cid, fid))
+                                if prev is None or pct > prev:
+                                    out[(cid, fid)] = float(pct)
+                            break
         return out

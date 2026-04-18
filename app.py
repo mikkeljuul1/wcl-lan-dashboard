@@ -220,6 +220,9 @@ def dashboard() -> Any:
 
         # Per-character ilvl-bracket parses (completed/timed keys only).
         # Build lookup list: one entry per (character, completed fight).
+        # Match is by absolute start time because each player uploads their
+        # own WCL report for the same M+ run.
+        report_start = report.get("startTime") or 0
         fights_by_id = {f.get("id"): f for f in (report.get("fights") or [])}
         lookups: list[dict[str, Any]] = []
         for fr in rankings:
@@ -232,6 +235,12 @@ def dashboard() -> Any:
             encounter_id = (fr.get("encounter") or {}).get("id")
             if not isinstance(encounter_id, int):
                 continue
+            # Prefer absolute time from the fight-rankings payload; fall back
+            # to report_start + fight.startTime (which is relative).
+            abs_start = fr.get("startTime")
+            if not isinstance(abs_start, int):
+                rel = fight.get("startTime") or 0
+                abs_start = int(report_start) + int(rel)
             roles = fr.get("roles") or {}
             for role_key, metric in (("dps", "dps"), ("tanks", "dps"), ("healers", "hps")):
                 for ch in (roles.get(role_key) or {}).get("characters") or []:
@@ -242,13 +251,14 @@ def dashboard() -> Any:
                                 "characterId": cid,
                                 "encounterId": encounter_id,
                                 "fightId": fid,
+                                "absStartTime": int(abs_start),
                                 "metric": metric,
                             }
                         )
         ilvl_bracket: dict[tuple[int, int], float] = {}
         if lookups:
             try:
-                ilvl_bracket = client.get_ilvl_bracket_parses(code, lookups)
+                ilvl_bracket = client.get_ilvl_bracket_parses(lookups)
             except Exception:
                 app.logger.exception("Fetching ilvl-bracket parses failed")
     except Exception as exc:  # surface API errors as JSON for the frontend
