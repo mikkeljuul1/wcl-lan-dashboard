@@ -120,6 +120,9 @@ def build_dashboard(
 
     dungeons: list[dict[str, Any]] = []
     for fight in report.get("fights") or []:
+        # Skip wipes — only show completed/timed runs.
+        if fight.get("kill") is not True:
+            continue
         fight_id = fight.get("id")
         fr = rankings_by_fight.get(fight_id) or {}
         characters = _flatten_characters(fr) if fr else []
