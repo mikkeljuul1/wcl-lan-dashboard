@@ -138,6 +138,30 @@ class WCLClient:
         report["code"] = code
         return report
 
+    def get_latest_user_report_code(self, user_id: int) -> str | None:
+        """Return the newest public report code uploaded by ``user_id``.
+
+        WCL orders ``reportData.reports`` by ``startTime`` descending, so the
+        first entry is the most recent upload. Returns ``None`` if the user has
+        no accessible reports.
+        """
+        gql = """
+        query($uid: Int!) {
+          reportData {
+            reports(userID: $uid, limit: 1) {
+              data { code startTime }
+            }
+          }
+        }
+        """
+        data = self.query(gql, {"uid": int(user_id)})
+        reports = (
+            ((data.get("reportData") or {}).get("reports") or {}).get("data") or []
+        )
+        if not reports:
+            return None
+        return reports[0].get("code")
+
     def get_fight_tables(
         self, code: str, fight_ids: list[int]
     ) -> dict[int, dict[str, Any]]:

@@ -9,6 +9,7 @@ The dashboard auto-refreshes so new pulls appear without user interaction.
 from __future__ import annotations
 
 import os
+import time
 from typing import Any
 
 from dotenv import load_dotenv
@@ -34,10 +35,53 @@ def get_client() -> WCLClient:
     return _client
 
 
+def _get_user_id() -> int | None:
+    """Return the configured WCL user id to auto-track, or ``None``."""
+    raw = (os.environ.get("WCL_USER_ID") or "").strip()
+    if not raw:
+        return None
+    try:
+        return int(raw)
+    except ValueError:
+        app.logger.warning("Invalid WCL_USER_ID=%r; expected integer", raw)
+        return None
+
+
 # Very small in-memory "session" — which report code is currently tracked.
-_state: dict[str, str] = {
+_state: dict[str, Any] = {
     "report_code": os.environ.get("WCL_REPORT_CODE", "").strip(),
+    # Cache of the most recent report code resolved from WCL_USER_ID.
+    "auto_code": "",
+    "auto_checked_at": 0.0,
+    # Set to True once the user explicitly picks a report via /api/session,
+    # which pins tracking to that code until they clear it.
+    "manual_override": bool((os.environ.get("WCL_REPORT_CODE") or "").strip()),
 }
+
+# Re-check WCL for a newer report at most this often (seconds).
+_AUTO_POLL_SECONDS = 60.0
+
+
+def _resolve_auto_code(client: WCLClient) -> str:
+    """Return the newest report code for ``WCL_USER_ID``, cached briefly.
+
+    Falls back to the cached value on transient API errors so the dashboard
+    keeps rendering even if WCL is briefly unreachable.
+    """
+    uid = _get_user_id()
+    if uid is None:
+        return ""
+    now = time.time()
+    if _state.get("auto_code") and (now - _state.get("auto_checked_at", 0.0)) < _AUTO_POLL_SECONDS:
+        return _state["auto_code"]
+    try:
+        latest = client.get_latest_user_report_code(uid) or ""
+    except Exception:
+        app.logger.exception("Auto-resolving latest report for user %s failed", uid)
+        return _state.get("auto_code", "")
+    _state["auto_code"] = latest
+    _state["auto_checked_at"] = now
+    return latest
 
 
 # --- transforms -----------------------------------------------------------
@@ -285,23 +329,45 @@ def session_endpoint() -> Any:
         payload = request.get_json(silent=True) or {}
         raw = (payload.get("report") or "").strip()
         if not raw:
-            return jsonify({"error": "Missing 'report' value"}), 400
+            # Empty string clears the manual override and resumes auto-tracking.
+            _state["report_code"] = ""
+            _state["manual_override"] = False
+            return jsonify({"report_code": "", "auto": _get_user_id() is not None})
         try:
             code = extract_report_code(raw)
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 400
         _state["report_code"] = code
-        return jsonify({"report_code": code})
-    return jsonify({"report_code": _state.get("report_code", "")})
+        _state["manual_override"] = True
+        return jsonify({"report_code": code, "auto": False})
+    # GET: surface whatever code the dashboard would currently show.
+    current = _state.get("report_code") or ""
+    auto = False
+    if not _state.get("manual_override") and _get_user_id() is not None:
+        try:
+            current = _resolve_auto_code(get_client()) or current
+            auto = True
+        except Exception:
+            app.logger.exception("session GET: auto-resolve failed")
+    return jsonify({"report_code": current, "auto": auto})
 
 
 @app.route("/api/dashboard")
 def dashboard() -> Any:
-    code = (request.args.get("code") or _state.get("report_code") or "").strip()
+    client = get_client()
+    code = (request.args.get("code") or "").strip()
+    if not code:
+        # Prefer the manually selected code; otherwise fall back to the newest
+        # report from the configured WCL_USER_ID.
+        if _state.get("manual_override") and _state.get("report_code"):
+            code = _state["report_code"]
+        else:
+            code = _resolve_auto_code(client) or _state.get("report_code") or ""
+            if code:
+                _state["report_code"] = code
     if not code:
         return jsonify({"error": "No report selected"}), 404
     try:
-        client = get_client()
         report = client.get_report(code)
         # Fetch damage/healing tables for every completed (kill) fight, so the
         # dashboard can populate player rows even when WCL hasn't yet indexed
