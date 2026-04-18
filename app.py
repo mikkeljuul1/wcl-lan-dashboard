@@ -282,7 +282,9 @@ def build_dashboard(
         }
         if fight_tables and fight_id in fight_tables:
             _merge_table(dungeon, fight_tables[fight_id])
-        # Override rankPercent / bracketPercent with real per-character parses.
+        # Fill rankPercent / bracketPercent only when missing in report.rankings.
+        # For indexed fights, report.rankings(compare: Rankings, playerMetric: dps)
+        # already carries the exact values shown in the WCL damage table.
         if char_parses:
             for c in dungeon["characters"]:
                 cid = c.get("id")
@@ -293,9 +295,9 @@ def build_dashboard(
                     continue
                 overall = parses.get("overall")
                 bracket = parses.get("bracket")
-                if overall is not None:
+                if overall is not None and c.get("rankPercent") is None:
                     c["rankPercent"] = round(overall, 1)
-                if bracket is not None:
+                if bracket is not None and c.get("bracketPercent") is None:
                     c["bracketPercent"] = round(bracket, 1)
         dungeon["characters"] = sorted(
             dungeon["characters"],
@@ -401,7 +403,8 @@ def dashboard() -> Any:
         player_info: dict[str, dict[str, Any]] = {}
         for fr in fight_rankings:
             enc_id = (fr.get("encounter") or {}).get("id")
-            for role_key, metric in (("tanks", "dps"), ("dps", "dps"), ("healers", "hps")):
+            # Use dps for all roles to mirror the WCL Damage Done table.
+            for role_key, metric in (("tanks", "dps"), ("dps", "dps"), ("healers", "dps")):
                 for ch in ((fr.get("roles") or {}).get(role_key) or {}).get("characters") or []:
                     name = ch.get("name")
                     cid = ch.get("id")
