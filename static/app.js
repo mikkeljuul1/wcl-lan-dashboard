@@ -1,8 +1,7 @@
 // Client-side logic for the WCL LAN dashboard.
-// Polls /api/dashboard every 10s. Role filter (DPS/Healer/Tank) is applied
-// locally so toggling doesn't require a round-trip.
+// Data is fetched on load and only when the user clicks Refresh or
+// loads a new report. Role filter (DPS/Healer/Tank) is applied locally.
 
-const REFRESH_MS = 10_000;
 const ROLE_PREF_KEY = "wcl.roleFilter";
 const BRACKET_PREF_KEY = "wcl.useBracket";
 const EXPANDED_PREF_KEY = "wcl.expanded";
@@ -23,8 +22,6 @@ const els = {
   roleToggles:   document.querySelectorAll(".role-toggle"),
   bracketToggle: document.getElementById("bracket-toggle"),
 };
-
-let refreshTimer = null;
 
 // Which dungeons are currently expanded. Keyed by fightId.
 const expanded = new Set();
@@ -383,15 +380,9 @@ els.form.addEventListener("submit", (ev) => {
 
 els.refreshBtn.addEventListener("click", () => loadDashboard());
 
-function startAutoRefresh() {
-  if (refreshTimer) clearInterval(refreshTimer);
-  refreshTimer = setInterval(() => loadDashboard({ silent: true }), REFRESH_MS);
-}
-
 // Initial load.
 if (els.input.value.trim()) {
   loadDashboard();
 } else {
   setStatus("Paste a Warcraft Logs report URL or code to begin.");
 }
-startAutoRefresh();
