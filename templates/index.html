@@ -26,6 +26,11 @@
       <button type="submit">Load</button>
       <button type="button" id="refresh-btn" title="Refresh now">Refresh</button>
     </form>
+    <div class="auth-controls" aria-live="polite">
+      <a id="auth-connect" class="auth-link" href="/auth/wcl/start">Connect WCL</a>
+      <button type="button" id="auth-disconnect" class="auth-link" hidden>Disconnect</button>
+      <p id="auth-status" class="meta auth-status"></p>
+    </div>
   </header>
 
   <nav class="toolbar" aria-label="Filters">

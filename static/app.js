@@ -10,6 +10,9 @@ const els = {
   form:          document.getElementById("report-form"),
   input:         document.getElementById("report-input"),
   refreshBtn:    document.getElementById("refresh-btn"),
+  authConnect:   document.getElementById("auth-connect"),
+  authDisconnect:document.getElementById("auth-disconnect"),
+  authStatus:    document.getElementById("auth-status"),
   status:        document.getElementById("status"),
   reportMeta:    document.getElementById("report-meta"),
   sessionAvg:    document.getElementById("session-average"),
@@ -98,6 +101,65 @@ function fmtTime(epochMs) {
 function setStatus(msg, { error = false } = {}) {
   els.status.textContent = msg || "";
   els.status.classList.toggle("error", Boolean(error));
+}
+
+function setAuthStatus(msg) {
+  if (!els.authStatus) return;
+  els.authStatus.textContent = msg || "";
+}
+
+async function loadAuthStatus() {
+  if (!els.authConnect || !els.authDisconnect) return;
+  try {
+    const res = await fetch('/api/auth/status', { cache: 'no-store' });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      setAuthStatus('User auth unavailable.');
+      els.authConnect.hidden = true;
+      els.authDisconnect.hidden = true;
+      return;
+    }
+
+    if (!body.enabled) {
+      els.authConnect.hidden = true;
+      els.authDisconnect.hidden = true;
+      setAuthStatus('');
+      return;
+    }
+
+    if (body.connected) {
+      els.authConnect.hidden = true;
+      els.authDisconnect.hidden = false;
+      const minutes = typeof body.expiresIn === 'number'
+        ? Math.max(1, Math.floor(body.expiresIn / 60))
+        : undefined;
+      setAuthStatus(minutes ? `Connected (${minutes}m token)` : 'Connected to user API');
+      return;
+    }
+
+    els.authConnect.hidden = false;
+    els.authDisconnect.hidden = true;
+    setAuthStatus('Connect to unlock user-scoped report data.');
+  } catch {
+    els.authConnect.hidden = true;
+    els.authDisconnect.hidden = true;
+    setAuthStatus('User auth unavailable.');
+  }
+}
+
+async function disconnectAuth() {
+  try {
+    const res = await fetch('/api/auth/logout', { method: 'POST' });
+    if (!res.ok) {
+      setStatus(`Failed to disconnect (${res.status})`, { error: true });
+      return;
+    }
+    await loadAuthStatus();
+    await loadDashboard({ silent: true });
+    setStatus('Disconnected from user auth.');
+  } catch (err) {
+    setStatus(String(err.message || err), { error: true });
+  }
 }
 
 // "Key %" — percentile within the keystone-level bracket.
@@ -377,8 +439,12 @@ els.form.addEventListener("submit", (ev) => {
 });
 
 els.refreshBtn.addEventListener("click", () => loadDashboard());
+if (els.authDisconnect) {
+  els.authDisconnect.addEventListener('click', () => disconnectAuth());
+}
 
 // Initial load.
+loadAuthStatus();
 if (els.input.value.trim()) {
   loadDashboard();
 } else {

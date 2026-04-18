@@ -10,11 +10,14 @@ import time
 from dataclasses import dataclass
 from threading import Lock
 from typing import Any
+from urllib.parse import urlencode
 
 import requests
 
 TOKEN_URL = "https://www.warcraftlogs.com/oauth/token"
+AUTHORIZE_URL = "https://www.warcraftlogs.com/oauth/authorize"
 API_URL = "https://www.warcraftlogs.com/api/v2/client"
+USER_API_URL = "https://www.warcraftlogs.com/api/v2/user"
 
 # Warcraft Logs report codes in URLs look like /reports/<code>[/...]
 # Codes are alphanumeric, length ~16. Accept the code itself or a full URL.
@@ -82,10 +85,15 @@ class WCLClient:
             return self._token.access_token
 
     # ------------------------------------------------------------- queries
-    def query(self, gql: str, variables: dict[str, Any] | None = None) -> dict[str, Any]:
-        token = self._get_token()
+    def _query_endpoint(
+        self,
+        endpoint: str,
+        token: str,
+        gql: str,
+        variables: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         resp = requests.post(
-            API_URL,
+            endpoint,
             json={"query": gql, "variables": variables or {}},
             headers={
                 "Authorization": f"Bearer {token}",
@@ -99,6 +107,62 @@ class WCLClient:
             messages = "; ".join(e.get("message", "unknown") for e in data["errors"])
             raise RuntimeError(f"WCL GraphQL error: {messages}")
         return data.get("data", {})
+
+    def query(self, gql: str, variables: dict[str, Any] | None = None) -> dict[str, Any]:
+        token = self._get_token()
+        return self._query_endpoint(API_URL, token, gql, variables)
+
+    def query_user(
+        self,
+        access_token: str,
+        gql: str,
+        variables: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        if not access_token:
+            raise RuntimeError("Missing user access token")
+        return self._query_endpoint(USER_API_URL, access_token, gql, variables)
+
+    def build_authorize_url(self, redirect_uri: str, state: str) -> str:
+        params = {
+            "client_id": self._client_id,
+            "response_type": "code",
+            "redirect_uri": redirect_uri,
+            "state": state,
+        }
+        return f"{AUTHORIZE_URL}?{urlencode(params)}"
+
+    def exchange_authorization_code(self, code: str, redirect_uri: str) -> dict[str, Any]:
+        resp = requests.post(
+            TOKEN_URL,
+            data={
+                "grant_type": "authorization_code",
+                "code": code,
+                "redirect_uri": redirect_uri,
+            },
+            auth=(self._client_id, self._client_secret),
+            timeout=self._timeout,
+        )
+        resp.raise_for_status()
+        payload = resp.json()
+        if not payload.get("access_token"):
+            raise RuntimeError("WCL OAuth response missing access_token")
+        return payload
+
+    def refresh_user_access_token(self, refresh_token: str) -> dict[str, Any]:
+        resp = requests.post(
+            TOKEN_URL,
+            data={
+                "grant_type": "refresh_token",
+                "refresh_token": refresh_token,
+            },
+            auth=(self._client_id, self._client_secret),
+            timeout=self._timeout,
+        )
+        resp.raise_for_status()
+        payload = resp.json()
+        if not payload.get("access_token"):
+            raise RuntimeError("WCL OAuth refresh response missing access_token")
+        return payload
 
     # Single combined query: metadata, fights and rankings in one round-trip.
     _REPORT_QUERY = """
@@ -137,6 +201,23 @@ class WCLClient:
             raise RuntimeError(f"Report not found or not accessible: {code}")
         report["code"] = code
         return report
+
+    def get_report_rankings_user(self, code: str, access_token: str) -> dict[str, Any]:
+        """Fetch report rankings from the user-authenticated API endpoint."""
+        code = extract_report_code(code)
+        gql = """
+        query($code: String!) {
+            reportData {
+                report(code: $code) {
+                    rankings(compare: Rankings, playerMetric: dps)
+                }
+            }
+        }
+        """
+        data = self.query_user(access_token, gql, {"code": code})
+        report = (data.get("reportData") or {}).get("report") or {}
+        rankings = report.get("rankings")
+        return rankings if isinstance(rankings, dict) else {"data": []}
 
     def get_latest_user_report_code(self, user_id: int) -> str | None:
         """Return the newest public report code uploaded by ``user_id``.
@@ -209,30 +290,38 @@ class WCLClient:
         """Return per-character, per-fight overall + bracket (Key %) parses.
 
         ``lookups`` items are dicts with keys:
-          * ``characterId`` (int) — WCL character id
+          * ``characterId`` (int) - WCL character id
           * ``encounterId`` (int)
-          * ``fightId``     (int) — fight id within the *session* report
-          * ``absStartTime``(int) — absolute epoch ms when the fight began
-          * ``metric``      (str) — "dps" | "hps"
+          * ``fightId``     (int) - fight id within the *session* report
+          * ``absStartTime``(int) - absolute epoch ms when the fight began
+          * ``reportCode``  (str, optional) - when provided, only rank rows
+            from this report code are eligible matches
+          * ``metric``      (str) - "dps" | "hps"
 
         Returns ``{(characterId, fightId): {"overall": float, "bracket": float}}``.
-        Each player uploads their own WCL report for the same M+ run, so the
-        ``report.code`` on their personal rank entries will differ from the
-        session report's code — we match by absolute ``startTime`` (±60 s).
+        Matching is done by absolute ``startTime`` (+/- 60 s). If ``reportCode``
+        is present in a lookup, rank rows from other report codes are ignored.
         """
         # Group by (character_id, metric) -> set of encounter_ids
         grouped: dict[tuple[int, str], set[int]] = {}
-        per_fight: dict[tuple[int, int], int] = {}  # (character_id, fight_id) -> abs start ms
+        per_fight: dict[tuple[int, int], dict[str, Any]] = {}
+        # (character_id, fight_id) -> {absStartTime, reportCode}
         for lk in lookups:
             cid = lk.get("characterId")
             eid = lk.get("encounterId")
             fid = lk.get("fightId")
             abs_start = lk.get("absStartTime")
+            report_code = lk.get("reportCode")
             metric = lk.get("metric") or "dps"
             if not all(isinstance(v, int) for v in (cid, eid, fid, abs_start)):
                 continue
+            if report_code is not None and not isinstance(report_code, str):
+                report_code = None
             grouped.setdefault((cid, metric), set()).add(eid)
-            per_fight[(cid, fid)] = abs_start
+            per_fight[(cid, fid)] = {
+                "absStartTime": abs_start,
+                "reportCode": (report_code or "").strip(),
+            }
 
         out: dict[tuple[int, int], dict[str, float]] = {}
         for (cid, metric), enc_ids in grouped.items():
@@ -262,25 +351,46 @@ class WCLClient:
             except Exception:
                 continue
             char = ((data.get("characterData") or {}).get("character")) or {}
-            wanted = [
-                (fid, abs_start)
-                for (c, fid), abs_start in per_fight.items()
+            wanted = {
+                fid: meta
+                for (c, fid), meta in per_fight.items()
                 if c == cid
-            ]
+            }
+            best_score: dict[tuple[int, str], float] = {}
             for eid in enc_ids:
                 for prefix, key in (("o", "overall"), ("b", "bracket")):
                     er = char.get(f"{prefix}{eid}") or {}
+                    best_for_fight: dict[int, tuple[float, float]] = {}
                     for rk in (er.get("ranks") or []):
                         rk_start = rk.get("startTime")
                         if not isinstance(rk_start, (int, float)):
                             continue
-                        for fid, abs_start in wanted:
-                            if abs(rk_start - abs_start) <= 60_000:
-                                pct = rk.get("rankPercent")
-                                if isinstance(pct, (int, float)):
-                                    slot = out.setdefault((cid, fid), {})
-                                    prev = slot.get(key)
-                                    if prev is None or pct > prev:
-                                        slot[key] = float(pct)
-                                break
+                        pct = rk.get("rankPercent")
+                        if not isinstance(pct, (int, float)):
+                            continue
+                        rk_report = (rk.get("report") or {}).get("code")
+                        rk_code = rk_report.strip() if isinstance(rk_report, str) else ""
+                        for fid, meta in wanted.items():
+                            abs_start = meta.get("absStartTime")
+                            if not isinstance(abs_start, (int, float)):
+                                continue
+                            diff = abs(rk_start - abs_start)
+                            if diff > 60_000:
+                                continue
+                            target_code = meta.get("reportCode") or ""
+                            if target_code:
+                                if not rk_code or rk_code != target_code:
+                                    continue
+                            prev = best_for_fight.get(fid)
+                            if prev is None or diff < prev[0]:
+                                best_for_fight[fid] = (float(diff), float(pct))
+
+                    for fid, (diff, pct_value) in best_for_fight.items():
+                        score_key = (fid, key)
+                        prev_best = best_score.get(score_key)
+                        if prev_best is not None and diff >= prev_best:
+                            continue
+                        best_score[score_key] = diff
+                        slot = out.setdefault((cid, fid), {})
+                        slot[key] = pct_value
         return out

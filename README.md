@@ -3,8 +3,8 @@
 A tiny Python/Flask dashboard for [Warcraft Logs](https://www.warcraftlogs.com/)
 designed to run on a Raspberry Pi connected to a TV. It shows:
 
-- The **latest dungeon** in your current log report (per-player parses).
-- The **session parse-average** across every completed dungeon in the report.
+- The **latest dungeon** in your current log report (per-player Key % + DPS/HPS).
+- The **session Key % average** across every completed dungeon in the report.
 
 The dashboard polls the Warcraft Logs v2 GraphQL API every minute, so new
 pulls appear automatically without interaction.
@@ -34,6 +34,16 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
+If you want user-authenticated API access (recommended for best data parity),
+also set these values in `.env`:
+
+```bash
+WCL_OAUTH_REDIRECT_URI=http://localhost:8080/auth/wcl/callback
+FLASK_SECRET_KEY=replace_with_a_long_random_string
+```
+
+The redirect URI must be added to your Warcraft Logs API client settings.
+
 ### 3. Run
 
 ```bash
@@ -42,6 +52,9 @@ python app.py
 
 Open <http://localhost:8080> and paste a report URL (or code) — for example
 `https://www.warcraftlogs.com/reports/ba8GyNv4nCKqgt7V`.
+
+If OAuth is configured, click **Connect WCL** in the header to authorize the
+dashboard against your Warcraft Logs account.
 
 ## Raspberry Pi kiosk tips
 
@@ -73,8 +86,11 @@ Open <http://localhost:8080> and paste a report URL (or code) — for example
 
 - The API token is obtained via the OAuth2 client-credentials flow and cached
   in-memory until it expires.
-- Only the public client API is used — no private-log access. The report you
-  paste must be publicly readable (the default for most guild logs).
+- If `WCL_OAUTH_REDIRECT_URI` is configured and you connect via **Connect WCL**,
+  the dashboard can also query the `/api/v2/user` endpoint with your
+  authorization-code token.
+- Without OAuth connection, only the public client API is used and reports must
+  be publicly readable.
 - Parse percentages and the session average are computed from the rankings
   returned by WCL. Untimed or still-in-progress dungeons with no rankings yet
   are skipped.

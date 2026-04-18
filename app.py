@@ -9,17 +9,19 @@ The dashboard auto-refreshes so new pulls appear without user interaction.
 from __future__ import annotations
 
 import os
+import secrets
 import time
 from typing import Any
 
 from dotenv import load_dotenv
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, jsonify, redirect, render_template, request, session, url_for
 
 from wcl_client import WCLClient, extract_report_code
 
 load_dotenv()
 
 app = Flask(__name__)
+app.secret_key = os.environ.get("FLASK_SECRET_KEY") or os.urandom(32)
 
 # --- singletons -----------------------------------------------------------
 _client: WCLClient | None = None
@@ -63,6 +65,71 @@ _state: dict[str, Any] = {
 # Re-check WCL for a newer report at most this often (seconds).
 _AUTO_POLL_SECONDS = 60.0
 
+_OAUTH_STATE_KEY = "wcl_oauth_state"
+_OAUTH_TOKEN_KEY = "wcl_oauth_token"
+
+
+def _oauth_redirect_uri() -> str:
+    return (os.environ.get("WCL_OAUTH_REDIRECT_URI") or "").strip()
+
+
+def _oauth_enabled() -> bool:
+    return bool(_oauth_redirect_uri())
+
+
+def _oauth_token_from_session() -> dict[str, Any] | None:
+    token = session.get(_OAUTH_TOKEN_KEY)
+    return token if isinstance(token, dict) else None
+
+
+def _store_oauth_token(payload: dict[str, Any]) -> None:
+    access_token = payload.get("access_token")
+    if not isinstance(access_token, str) or not access_token:
+        raise RuntimeError("OAuth token response missing access_token")
+    refresh_token = payload.get("refresh_token")
+    expires_in = payload.get("expires_in")
+    try:
+        ttl = float(expires_in) if expires_in is not None else 0.0
+    except (TypeError, ValueError):
+        ttl = 0.0
+    session[_OAUTH_TOKEN_KEY] = {
+        "access_token": access_token,
+        "refresh_token": refresh_token if isinstance(refresh_token, str) else "",
+        "expires_at": time.time() + max(0.0, ttl),
+    }
+    session.modified = True
+
+
+def _clear_oauth_state() -> None:
+    session.pop(_OAUTH_STATE_KEY, None)
+    session.pop(_OAUTH_TOKEN_KEY, None)
+    session.modified = True
+
+
+def _get_user_access_token(client: WCLClient) -> str | None:
+    token = _oauth_token_from_session()
+    if not token:
+        return None
+    access = token.get("access_token")
+    expires_at = token.get("expires_at")
+    if isinstance(access, str) and isinstance(expires_at, (int, float)):
+        if expires_at - 30 > time.time():
+            return access
+    refresh_token = token.get("refresh_token")
+    if not isinstance(refresh_token, str) or not refresh_token:
+        _clear_oauth_state()
+        return None
+    try:
+        refreshed = client.refresh_user_access_token(refresh_token)
+        _store_oauth_token(refreshed)
+    except Exception:
+        app.logger.exception("Refreshing user OAuth token failed")
+        _clear_oauth_state()
+        return None
+    token = _oauth_token_from_session()
+    access = (token or {}).get("access_token")
+    return access if isinstance(access, str) and access else None
+
 
 def _resolve_auto_code(client: WCLClient) -> str:
     """Return the newest report code for ``WCL_USER_ID``, cached briefly.
@@ -84,6 +151,57 @@ def _resolve_auto_code(client: WCLClient) -> str:
     _state["auto_code"] = latest
     _state["auto_checked_at"] = now
     return latest
+
+
+def _role_character_count(fight_rank: dict[str, Any]) -> int:
+    roles = fight_rank.get("roles") or {}
+    total = 0
+    for bucket in ("tanks", "healers", "dps"):
+        chars = ((roles.get(bucket) or {}).get("characters") or [])
+        total += len(chars)
+    return total
+
+
+def _merge_rankings(
+    primary: dict[str, Any] | None,
+    secondary: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """Merge ranking payloads per fight, preferring richer character data."""
+    primary_rows = (primary or {}).get("data") or []
+    secondary_rows = (secondary or {}).get("data") or []
+
+    by_fight: dict[int, dict[str, Any]] = {}
+    ordered_ids: list[int] = []
+
+    for row in secondary_rows:
+        fid = row.get("fightID")
+        if not isinstance(fid, int):
+            continue
+        by_fight[fid] = row
+
+    for row in primary_rows:
+        fid = row.get("fightID")
+        if not isinstance(fid, int):
+            continue
+        ordered_ids.append(fid)
+        other = by_fight.pop(fid, None)
+        if other and _role_character_count(other) > _role_character_count(row):
+            by_fight[fid] = other
+            continue
+        by_fight[fid] = row
+
+    for fid in sorted(by_fight):
+        if fid not in ordered_ids:
+            ordered_ids.append(fid)
+
+    merged_rows: list[dict[str, Any]] = []
+    for fid in ordered_ids:
+        row = by_fight.get(fid)
+        if not isinstance(row, dict):
+            continue
+        merged_rows.append(row)
+
+    return {"data": merged_rows}
 
 
 # --- transforms -----------------------------------------------------------
@@ -327,6 +445,75 @@ def build_dashboard(
 
 
 # --- routes ---------------------------------------------------------------
+@app.route("/auth/wcl/start")
+def auth_wcl_start() -> Any:
+    if not _oauth_enabled():
+        return jsonify({"error": "OAuth is not configured"}), 404
+    state = secrets.token_urlsafe(24)
+    session[_OAUTH_STATE_KEY] = state
+    session.modified = True
+    auth_url = get_client().build_authorize_url(
+        redirect_uri=_oauth_redirect_uri(),
+        state=state,
+    )
+    return redirect(auth_url)
+
+
+@app.route("/auth/wcl/callback")
+def auth_wcl_callback() -> Any:
+    if not _oauth_enabled():
+        return jsonify({"error": "OAuth is not configured"}), 404
+    expected_state = session.get(_OAUTH_STATE_KEY)
+    returned_state = (request.args.get("state") or "").strip()
+    _clear_oauth_state()
+
+    if not expected_state or returned_state != expected_state:
+        return jsonify({"error": "OAuth state mismatch"}), 400
+
+    error = (request.args.get("error") or "").strip()
+    if error:
+        return jsonify({"error": f"OAuth authorization failed: {error}"}), 400
+
+    code = (request.args.get("code") or "").strip()
+    if not code:
+        return jsonify({"error": "OAuth callback missing code"}), 400
+
+    try:
+        payload = get_client().exchange_authorization_code(
+            code=code,
+            redirect_uri=_oauth_redirect_uri(),
+        )
+        _store_oauth_token(payload)
+    except Exception as exc:
+        app.logger.exception("Exchanging OAuth authorization code failed")
+        return jsonify({"error": str(exc)}), 502
+
+    return redirect(url_for("index", auth="connected"))
+
+
+@app.route("/api/auth/status")
+def auth_status() -> Any:
+    if not _oauth_enabled():
+        return jsonify({"enabled": False, "connected": False, "expiresIn": None})
+    access = _get_user_access_token(get_client())
+    token = _oauth_token_from_session() or {}
+    expires_at = token.get("expires_at")
+    expires_in = None
+    if isinstance(expires_at, (int, float)):
+        expires_in = max(0, int(expires_at - time.time()))
+    return jsonify({
+        "enabled": True,
+        "connected": bool(access),
+        "expiresIn": expires_in,
+    })
+
+
+@app.route("/api/auth/logout", methods=["POST"])
+def auth_logout() -> Any:
+    _clear_oauth_state()
+    return jsonify({"ok": True})
+
+
 @app.route("/")
 def index() -> Any:
     return render_template("index.html", report_code=_state.get("report_code", ""))
@@ -378,6 +565,15 @@ def dashboard() -> Any:
         return jsonify({"error": "No report selected"}), 404
     try:
         report = client.get_report(code)
+        user_token = _get_user_access_token(client)
+        if user_token:
+            try:
+                private_rankings = client.get_report_rankings_user(code, user_token)
+                report["rankings"] = _merge_rankings(report.get("rankings"), private_rankings)
+            except Exception:
+                # Non-fatal: keep public rankings if user endpoint data fails.
+                app.logger.exception("Fetching user-scoped rankings failed")
+
         # Fetch damage/healing tables for every completed (kill) fight, so the
         # dashboard can populate player rows even when WCL hasn't yet indexed
         # rankings for the most recent run.
@@ -419,6 +615,7 @@ def dashboard() -> Any:
                         )
         # Build lookups: one (character, fight) pair per completed fight per player.
         lookups: list[dict[str, Any]] = []
+        report_code = report.get("code")
         for fid, fight in fight_by_id.items():
             abs_start = (fight.get("startTime") or 0) + report_start
             enc_id = fight.get("encounterID")
@@ -429,6 +626,7 @@ def dashboard() -> Any:
                     "encounterId": eid,
                     "fightId": fid,
                     "absStartTime": abs_start,
+                    "reportCode": report_code,
                     "metric": info["metric"],
                 })
         char_parses: dict[tuple[int, int], dict[str, float]] = {}
