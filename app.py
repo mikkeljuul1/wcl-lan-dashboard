@@ -51,12 +51,14 @@ def _flatten_characters(fight_rank: dict[str, Any]) -> list[dict[str, Any]]:
             # Defensive copy with the fields we actually render.
             out.append(
                 {
+                    "id": char.get("id"),
                     "name": char.get("name"),
                     "class": char.get("class"),
                     "spec": char.get("spec"),
                     "role": label,
                     "rankPercent": char.get("rankPercent"),
                     "bracketPercent": char.get("bracketPercent"),
+                    "ilvlBracketPercent": None,
                     "amount": char.get("amount"),
                 }
             )
@@ -99,7 +101,9 @@ def _merge_table(fight: dict[str, Any], tables: dict[str, Any] | None) -> None:
 
 
 def build_dashboard(
-    report: dict[str, Any], fight_tables: dict[int, dict[str, Any]] | None = None,
+    report: dict[str, Any],
+    fight_tables: dict[int, dict[str, Any]] | None = None,
+    ilvl_bracket: dict[tuple[int, int], float] | None = None,
 ) -> dict[str, Any]:
     """Shape a raw WCL report into the payload consumed by the frontend.
 
@@ -135,6 +139,13 @@ def build_dashboard(
         }
         if fight_tables and fight_id in fight_tables:
             _merge_table(dungeon, fight_tables[fight_id])
+        if ilvl_bracket:
+            for c in dungeon["characters"]:
+                cid = c.get("id")
+                if isinstance(cid, int):
+                    pct = ilvl_bracket.get((cid, fight_id))
+                    if pct is not None:
+                        c["ilvlBracketPercent"] = round(pct, 1)
         dungeon["characters"] = sorted(
             dungeon["characters"],
             key=lambda c: (c.get("rankPercent") or -1),
@@ -206,10 +217,44 @@ def dashboard() -> Any:
             except Exception:
                 # Non-fatal: fall back to parse-only display.
                 app.logger.exception("Fetching fight tables failed")
+
+        # Per-character ilvl-bracket parses (completed/timed keys only).
+        # Build lookup list: one entry per (character, completed fight).
+        fights_by_id = {f.get("id"): f for f in (report.get("fights") or [])}
+        lookups: list[dict[str, Any]] = []
+        for fr in rankings:
+            fid = fr.get("fightID")
+            if not isinstance(fid, int):
+                continue
+            fight = fights_by_id.get(fid) or {}
+            if fight.get("kill") is not True:
+                continue  # WCL only ranks completed/timed runs
+            encounter_id = (fr.get("encounter") or {}).get("id")
+            if not isinstance(encounter_id, int):
+                continue
+            roles = fr.get("roles") or {}
+            for role_key, metric in (("dps", "dps"), ("tanks", "dps"), ("healers", "hps")):
+                for ch in (roles.get(role_key) or {}).get("characters") or []:
+                    cid = ch.get("id")
+                    if isinstance(cid, int):
+                        lookups.append(
+                            {
+                                "characterId": cid,
+                                "encounterId": encounter_id,
+                                "fightId": fid,
+                                "metric": metric,
+                            }
+                        )
+        ilvl_bracket: dict[tuple[int, int], float] = {}
+        if lookups:
+            try:
+                ilvl_bracket = client.get_ilvl_bracket_parses(code, lookups)
+            except Exception:
+                app.logger.exception("Fetching ilvl-bracket parses failed")
     except Exception as exc:  # surface API errors as JSON for the frontend
         app.logger.exception("WCL fetch failed")
         return jsonify({"error": str(exc)}), 502
-    return jsonify(build_dashboard(report, fight_tables))
+    return jsonify(build_dashboard(report, fight_tables, ilvl_bracket))
 
 
 @app.route("/healthz")

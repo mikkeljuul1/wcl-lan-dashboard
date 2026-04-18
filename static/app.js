@@ -116,7 +116,7 @@ function setStatus(msg, { error = false } = {}) {
 // Value used for parse display/averaging — depends on bracket toggle.
 function parseValue(c) {
   if (!c) return null;
-  const v = useBracket ? c.bracketPercent : c.rankPercent;
+  const v = useBracket ? c.ilvlBracketPercent : c.rankPercent;
   return typeof v === "number" && !Number.isNaN(v) ? v : null;
 }
 
@@ -162,19 +162,56 @@ function renderPlayer(p) {
   parse.className = `parse ${parseTier(pct)}`;
   parse.setAttribute(
     "aria-label",
-    `${useBracket ? "Bracket parse" : "Parse"} ${fmtParse(pct)} percent`,
+    `${useBracket ? "Item-level bracket parse" : "Overall parse"} ${fmtParse(pct)} percent`,
   );
   parse.textContent = fmtParse(pct);
 
   node.append(left, parse);
 
-  const amount = fmtAmount(p.amount);
-  if (d.fightId != null && expanded.has(d.fightId)) li.setAttribute("open", "");
+  // Second row: throughput (DPS for DPS/Tank, HPS for Healers). Falls back
+  // to a generic "amount" if the table fetch didn't return per-player data.
+  const isHealer = p.role === "Healer";
+  const tp = isHealer ? p.hps : p.dps;
+  const tpLabel = isHealer ? "HPS" : "DPS";
+  const amountText = typeof tp === "number" && tp > 0
+    ? `${fmtAmount(tp)} ${tpLabel}`
+    : fmtAmount(p.amount);
+  if (amountText) {
+    const amount = document.createElement("div");
+    amount.className = "amount";
+    amount.textContent = amountText;
+    node.appendChild(amount);
+  }
+
+  return node;
+}
+
+function renderPlayerGrid(characters, { emptyMessage = "" } = {}) {
+  const grid = document.createElement("div");
+  grid.className = "player-grid";
+  grid.setAttribute("role", "list");
+
+  const filtered = filterChars(characters);
+  if (!filtered.length) {
+    const empty = document.createElement("p");
+    empty.className = "sub";
+    empty.textContent = emptyMessage || "No players to show.";
+    return empty;
+  }
+
+  for (const p of filtered) grid.appendChild(renderPlayer(p));
+  return grid;
+}
+
+function renderDungeon(d) {
+  const li = document.createElement("li");
+  li.className = "dungeon";
+  const isOpen = d.fightId != null && expanded.has(d.fightId);
+  if (isOpen) li.setAttribute("open", "");
 
   const button = document.createElement("button");
   button.type = "button";
   button.className = "dungeon-summary";
-  const isOpen = d.fightId != null && expanded.has(d.fightId);
   button.setAttribute("aria-expanded", isOpen ? "true" : "false");
 
   const chev = document.createElement("span");
@@ -248,36 +285,7 @@ function renderPlayer(p) {
     button.setAttribute("aria-expanded", open ? "true" : "false");
     saveExpanded();
   });
-ey";
-    badge.textContent = `+${d.keystoneLevel}`;
-    title.appendChild(badge);
-  }
-  if (d.kill === true) {
-    const badge = document.createElement("span");
-    badge.className = "badge kill";
-    badge.textContent = "Completed";
-    title.appendChild(badge);
-  } else if (d.kill === false) {
-    const badge = document.createElement("span");
-    badge.className = "badge wipe";
-    badge.textContent = "Wipe";
-    title.appendChild(badge);
-  }
 
-  const avgValue = averageFor(d.characters);
-  const avg = document.createElement("div");
-  avg.className = `avg parse ${parseTier(avgValue)}`;
-  avg.textContent = fmtParse(avgValue);
-
-  const when = document.createElement("div");
-  when.className = "when";
-  const startedAt = fmtTime(d.startTime);
-  const dur = fmtDuration(d.duration);
-  when.textContent = [startedAt && `Started ${startedAt}`, dur && `Duration ${dur}`]
-    .filter(Boolean)
-    .join(" · ");
-
-  li.append(title, avg, when);
   return li;
 }
 

@@ -177,3 +177,71 @@ class WCLClient:
                 "healing": report.get(f"h{fid}"),
             }
         return out
+
+    def get_ilvl_bracket_parses(
+        self,
+        code: str,
+        lookups: list[dict[str, Any]],
+    ) -> dict[tuple[int, int], float]:
+        """Return ilvl-bracket percentile for each (characterId, fightID).
+
+        ``lookups`` items are dicts with keys ``characterId``, ``encounterId``,
+        ``fightId`` and ``metric`` ("dps" | "hps"). One GraphQL request is
+        issued per unique (characterId, metric) pair, aliasing one
+        ``encounterRankings`` field per encounter the character played.
+        ``rankPercent`` on matching rank entries is WCL's ilvl-bracket parse
+        (same as ``?bybracket=1`` on the character page).
+        """
+        code = extract_report_code(code)
+        # Group by (character_id, metric) -> set of encounter_ids
+        grouped: dict[tuple[int, str], set[int]] = {}
+        for lk in lookups:
+            cid = lk.get("characterId")
+            eid = lk.get("encounterId")
+            metric = lk.get("metric") or "dps"
+            if not isinstance(cid, int) or not isinstance(eid, int):
+                continue
+            grouped.setdefault((cid, metric), set()).add(eid)
+
+        out: dict[tuple[int, int], float] = {}
+        for (cid, metric), enc_ids in grouped.items():
+            field_lines = [
+                (
+                    f"e{eid}: encounterRankings("
+                    f"encounterID: {eid}, byBracket: true, "
+                    f"metric: {metric}, includePrivateLogs: true)"
+                )
+                for eid in enc_ids
+            ]
+            gql = (
+                "query($id: Int!) {\n"
+                "  characterData {\n"
+                "    character(id: $id) {\n"
+                + "\n".join("      " + line for line in field_lines)
+                + "\n    }\n"
+                "  }\n"
+                "}\n"
+            )
+            try:
+                data = self.query(gql, {"id": cid})
+            except Exception:
+                # One bad character shouldn't break the whole dashboard.
+                continue
+            char = ((data.get("characterData") or {}).get("character")) or {}
+            for eid in enc_ids:
+                er = char.get(f"e{eid}") or {}
+                ranks = er.get("ranks") or []
+                for rk in ranks:
+                    report_info = rk.get("report") or {}
+                    if report_info.get("code") != code:
+                        continue
+                    fid = report_info.get("fightID")
+                    if not isinstance(fid, int):
+                        continue
+                    pct = rk.get("rankPercent")
+                    if isinstance(pct, (int, float)):
+                        # Keep best percent if the same fight appears twice.
+                        prev = out.get((cid, fid))
+                        if prev is None or pct > prev:
+                            out[(cid, fid)] = float(pct)
+        return out
