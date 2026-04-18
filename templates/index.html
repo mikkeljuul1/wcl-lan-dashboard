@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>WCL LAN Dashboard</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+</head>
+<body>
+  <header class="app-header" role="banner">
+    <div class="brand">
+      <h1>Warcraft Logs — Session Dashboard</h1>
+      <p id="report-meta" class="meta" aria-live="polite">Loading…</p>
+    </div>
+    <form id="report-form" class="report-form" aria-label="Select report">
+      <label for="report-input" class="sr-only">Report URL or code</label>
+      <input
+        id="report-input"
+        name="report"
+        type="text"
+        inputmode="url"
+        autocomplete="off"
+        placeholder="Paste report URL or code"
+        value="{{ report_code }}"
+      />
+      <button type="submit">Load</button>
+      <button type="button" id="refresh-btn" title="Refresh now">Refresh</button>
+    </form>
+  </header>
+
+  <main id="main" class="layout">
+    <section class="card summary" aria-labelledby="summary-heading">
+      <h2 id="summary-heading">Session average</h2>
+      <p class="big-number" id="session-average" aria-live="polite">—</p>
+      <p class="sub" id="session-sub">No dungeons yet</p>
+    </section>
+
+    <section class="card latest" aria-labelledby="latest-heading">
+      <header class="card-head">
+        <h2 id="latest-heading">Latest dungeon</h2>
+        <p id="latest-title" class="meta"></p>
+      </header>
+      <p class="big-number" id="latest-average">—</p>
+      <div id="latest-players" class="player-grid" role="list"></div>
+    </section>
+
+    <section class="card dungeons" aria-labelledby="dungeons-heading">
+      <h2 id="dungeons-heading">All dungeons in session</h2>
+      <ol id="dungeon-list" class="dungeon-list"></ol>
+    </section>
+  </main>
+
+  <p id="status" class="status" role="status" aria-live="polite"></p>
+
+  <script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>
