@@ -28,6 +28,15 @@
     </form>
   </header>
 
+  <nav class="toolbar" aria-label="Filters">
+    <fieldset class="role-filter">
+      <legend class="sr-only">Include roles in averages</legend>
+      <label><input type="checkbox" class="role-toggle" value="DPS" checked /> DPS</label>
+      <label><input type="checkbox" class="role-toggle" value="Healer" checked /> Healers</label>
+      <label><input type="checkbox" class="role-toggle" value="Tank" checked /> Tanks</label>
+    </fieldset>
+  </nav>
+
   <main id="main" class="layout">
     <section class="card summary" aria-labelledby="summary-heading">
       <h2 id="summary-heading">Session average</h2>

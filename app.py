@@ -9,7 +9,6 @@ The dashboard auto-refreshes so new pulls appear without user interaction.
 from __future__ import annotations
 
 import os
-from statistics import mean
 from typing import Any
 
 from dotenv import load_dotenv
@@ -64,33 +63,25 @@ def _flatten_characters(fight_rank: dict[str, Any]) -> list[dict[str, Any]]:
     return out
 
 
-def _parse_values(characters: list[dict[str, Any]]) -> list[float]:
-    return [
-        float(c["rankPercent"])
-        for c in characters
-        if isinstance(c.get("rankPercent"), (int, float))
-    ]
-
-
 def build_dashboard(report: dict[str, Any]) -> dict[str, Any]:
-    """Shape a raw WCL report into the payload consumed by the frontend."""
+    """Shape a raw WCL report into the payload consumed by the frontend.
+
+    Averaging (per-dungeon and session-wide) is intentionally done on the
+    client so that role filters (DPS / healer / tank) can be toggled without
+    a round-trip to the server.
+    """
     rankings_root = report.get("rankings") or {}
     # `rankings` can be returned as a dict or — for some reports — as None.
     fight_rankings: list[dict[str, Any]] = (rankings_root.get("data") or []) if isinstance(
         rankings_root, dict
     ) else []
-
-    fights_by_id = {f["id"]: f for f in (report.get("fights") or [])}
+    rankings_by_fight = {fr.get("fightID"): fr for fr in fight_rankings}
 
     dungeons: list[dict[str, Any]] = []
-    for fr in fight_rankings:
-        fight_id = fr.get("fightID")
-        fight = fights_by_id.get(fight_id, {})
-        characters = _flatten_characters(fr)
-        parses = _parse_values(characters)
-        if not parses:
-            # Skip entries with no ranked characters (e.g. trash-only, untimed bugs).
-            continue
+    for fight in report.get("fights") or []:
+        fight_id = fight.get("id")
+        fr = rankings_by_fight.get(fight_id) or {}
+        characters = _flatten_characters(fr) if fr else []
         encounter = fr.get("encounter") or {}
         dungeons.append(
             {
@@ -98,12 +89,12 @@ def build_dashboard(report: dict[str, Any]) -> dict[str, Any]:
                 "name": encounter.get("name") or fight.get("name"),
                 "encounterId": encounter.get("id") or fight.get("encounterID"),
                 "startTime": fr.get("startTime") or fight.get("startTime"),
-                "duration": fr.get("duration"),
+                "duration": fr.get("duration")
+                or ((fight.get("endTime") or 0) - (fight.get("startTime") or 0)),
                 "kill": fight.get("kill"),
                 "keystoneLevel": fight.get("keystoneLevel"),
                 "keystoneTime": fight.get("keystoneTime"),
                 "averageItemLevel": fight.get("averageItemLevel"),
-                "averageParse": round(mean(parses), 1),
                 "characters": sorted(
                     characters,
                     key=lambda c: (c.get("rankPercent") or -1),
@@ -115,18 +106,6 @@ def build_dashboard(report: dict[str, Any]) -> dict[str, Any]:
     # Sort chronologically; latest last.
     dungeons.sort(key=lambda d: d.get("startTime") or 0)
 
-    latest = dungeons[-1] if dungeons else None
-
-    # Session average = average of per-player parses across every dungeon.
-    all_parses: list[float] = []
-    for d in dungeons:
-        all_parses.extend(
-            c["rankPercent"]
-            for c in d["characters"]
-            if isinstance(c.get("rankPercent"), (int, float))
-        )
-    session_average = round(mean(all_parses), 1) if all_parses else None
-
     return {
         "code": report.get("code"),
         "title": report.get("title"),
@@ -135,8 +114,6 @@ def build_dashboard(report: dict[str, Any]) -> dict[str, Any]:
         "startTime": report.get("startTime"),
         "endTime": report.get("endTime"),
         "dungeonCount": len(dungeons),
-        "sessionAverage": session_average,
-        "latest": latest,
         "dungeons": dungeons,
     }
 

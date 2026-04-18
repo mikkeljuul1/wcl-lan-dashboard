@@ -1,7 +1,10 @@
 // Client-side logic for the WCL LAN dashboard.
-// Polls /api/dashboard at a regular interval so new pulls appear automatically.
+// Polls /api/dashboard every 10s. Role filter (DPS/Healer/Tank) is applied
+// locally so toggling doesn't require a round-trip.
 
-const REFRESH_MS = 60_000; // 1 minute
+const REFRESH_MS = 10_000;
+const ROLE_PREF_KEY = "wcl.roleFilter";
+const ROLES = ["DPS", "Healer", "Tank"];
 
 const els = {
   form:          document.getElementById("report-form"),
@@ -15,10 +18,39 @@ const els = {
   latestAverage: document.getElementById("latest-average"),
   latestPlayers: document.getElementById("latest-players"),
   dungeonList:   document.getElementById("dungeon-list"),
+  roleToggles:   document.querySelectorAll(".role-toggle"),
 };
 
 let refreshTimer = null;
+let lastData = null; // raw payload from the server
 
+// --- role filter persistence ---------------------------------------------
+function loadRolePref() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(ROLE_PREF_KEY) || "null");
+    if (Array.isArray(saved) && saved.every((r) => ROLES.includes(r))) return new Set(saved);
+  } catch { /* ignore */ }
+  return new Set(ROLES); // default: all roles included
+}
+
+function saveRolePref(set) {
+  try { localStorage.setItem(ROLE_PREF_KEY, JSON.stringify([...set])); } catch { /* ignore */ }
+}
+
+let selectedRoles = loadRolePref();
+
+// Initialise checkboxes from stored pref.
+for (const cb of els.roleToggles) {
+  cb.checked = selectedRoles.has(cb.value);
+  cb.addEventListener("change", () => {
+    if (cb.checked) selectedRoles.add(cb.value);
+    else selectedRoles.delete(cb.value);
+    saveRolePref(selectedRoles);
+    if (lastData) render(lastData);
+  });
+}
+
+// --- formatting helpers --------------------------------------------------
 function parseTier(pct) {
   if (pct == null || Number.isNaN(pct)) return "";
   if (pct >= 99) return "t-legendary";
@@ -54,6 +86,21 @@ function setStatus(msg, { error = false } = {}) {
   els.status.classList.toggle("error", Boolean(error));
 }
 
+// --- averaging (filtered by selectedRoles) -------------------------------
+function filterChars(characters) {
+  return (characters || []).filter((c) => selectedRoles.has(c.role));
+}
+
+function averageFor(characters) {
+  const vals = filterChars(characters)
+    .map((c) => c.rankPercent)
+    .filter((v) => typeof v === "number" && !Number.isNaN(v));
+  if (!vals.length) return null;
+  const sum = vals.reduce((a, b) => a + b, 0);
+  return Math.round((sum / vals.length) * 10) / 10;
+}
+
+// --- rendering -----------------------------------------------------------
 function renderPlayer(p) {
   const node = document.createElement("div");
   node.className = "player";
@@ -103,9 +150,10 @@ function renderDungeon(d) {
     title.appendChild(badge);
   }
 
+  const avgValue = averageFor(d.characters);
   const avg = document.createElement("div");
-  avg.className = `avg ${parseTier(d.averageParse)}`;
-  avg.textContent = fmtParse(d.averageParse);
+  avg.className = `avg parse ${parseTier(avgValue)}`;
+  avg.textContent = fmtParse(avgValue);
 
   const when = document.createElement("div");
   when.className = "when";
@@ -124,27 +172,43 @@ function render(data) {
   const metaParts = [data.title, data.zone, data.owner && `by ${data.owner}`].filter(Boolean);
   els.reportMeta.textContent = metaParts.length ? metaParts.join(" · ") : "Report loaded";
 
-  // Session summary
-  els.sessionAvg.textContent = fmtParse(data.sessionAverage);
-  els.sessionAvg.className = `big-number parse ${parseTier(data.sessionAverage)}`;
-  els.sessionSub.textContent =
-    data.dungeonCount === 1
-      ? "Across 1 dungeon"
-      : `Across ${data.dungeonCount} dungeons`;
+  const dungeons = data.dungeons || [];
 
-  // Latest dungeon
+  // Session average across all dungeons, filtered by selected roles.
+  const allChars = dungeons.flatMap((d) => d.characters || []);
+  const sessionAvg = averageFor(allChars);
+  els.sessionAvg.textContent = fmtParse(sessionAvg);
+  els.sessionAvg.className = `big-number parse ${parseTier(sessionAvg)}`;
+  els.sessionSub.textContent =
+    dungeons.length === 1 ? "Across 1 dungeon" : `Across ${dungeons.length} dungeons`;
+
+  // Latest dungeon = most recent by startTime.
+  const latest = dungeons.length
+    ? [...dungeons].sort((a, b) => (b.startTime || 0) - (a.startTime || 0))[0]
+    : null;
+
   els.latestPlayers.replaceChildren();
-  if (data.latest) {
-    const bits = [data.latest.name];
-    if (data.latest.keystoneLevel) bits.push(`+${data.latest.keystoneLevel}`);
-    if (data.latest.duration) bits.push(fmtDuration(data.latest.duration));
+  if (latest) {
+    const bits = [latest.name];
+    if (latest.keystoneLevel) bits.push(`+${latest.keystoneLevel}`);
+    if (latest.duration) bits.push(fmtDuration(latest.duration));
+    if (latest.kill === false) bits.push("Wipe");
     els.latestTitle.textContent = bits.join(" · ");
 
-    els.latestAverage.textContent = fmtParse(data.latest.averageParse);
-    els.latestAverage.className = `big-number parse ${parseTier(data.latest.averageParse)}`;
+    const latestAvg = averageFor(latest.characters);
+    els.latestAverage.textContent = fmtParse(latestAvg);
+    els.latestAverage.className = `big-number parse ${parseTier(latestAvg)}`;
 
-    for (const p of data.latest.characters || []) {
-      els.latestPlayers.appendChild(renderPlayer(p));
+    const visible = filterChars(latest.characters);
+    if (visible.length) {
+      for (const p of visible) els.latestPlayers.appendChild(renderPlayer(p));
+    } else {
+      const empty = document.createElement("p");
+      empty.className = "sub";
+      empty.textContent = latest.kill === false
+        ? "No parse data for this run (wipe)."
+        : "No players match the current role filter.";
+      els.latestPlayers.appendChild(empty);
     }
   } else {
     els.latestTitle.textContent = "No dungeons yet";
@@ -154,21 +218,21 @@ function render(data) {
 
   // Dungeon list — newest first
   els.dungeonList.replaceChildren();
-  const sorted = [...(data.dungeons || [])].sort(
-    (a, b) => (b.startTime || 0) - (a.startTime || 0),
-  );
+  const sorted = [...dungeons].sort((a, b) => (b.startTime || 0) - (a.startTime || 0));
   for (const d of sorted) els.dungeonList.appendChild(renderDungeon(d));
 }
 
-async function loadDashboard() {
+// --- data loading --------------------------------------------------------
+async function loadDashboard({ silent = false } = {}) {
   try {
-    setStatus("Refreshing…");
+    if (!silent) setStatus("Refreshing…");
     const res = await fetch("/api/dashboard", { cache: "no-store" });
     const body = await res.json().catch(() => ({}));
     if (!res.ok) {
       setStatus(body.error || `Failed to load (${res.status})`, { error: true });
       return;
     }
+    lastData = body;
     render(body);
     setStatus(`Updated ${new Date().toLocaleTimeString()}`);
   } catch (err) {
@@ -202,7 +266,7 @@ els.refreshBtn.addEventListener("click", () => loadDashboard());
 
 function startAutoRefresh() {
   if (refreshTimer) clearInterval(refreshTimer);
-  refreshTimer = setInterval(loadDashboard, REFRESH_MS);
+  refreshTimer = setInterval(() => loadDashboard({ silent: true }), REFRESH_MS);
 }
 
 // Initial load.
