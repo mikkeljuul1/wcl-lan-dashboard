@@ -18,7 +18,9 @@ from flask import Flask, jsonify, redirect, render_template, request, session, u
 
 from wcl_client import WCLClient, extract_report_code
 
-load_dotenv()
+# Force local .env precedence so stale process-level env vars (e.g. from
+# systemd unit overrides) cannot shadow updated credentials.
+load_dotenv(override=True)
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY") or os.urandom(32)

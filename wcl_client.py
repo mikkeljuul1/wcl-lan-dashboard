@@ -52,6 +52,8 @@ class WCLClient:
     """Minimal Warcraft Logs v2 GraphQL client."""
 
     def __init__(self, client_id: str, client_secret: str, timeout: float = 20.0):
+        client_id = (client_id or "").strip()
+        client_secret = (client_secret or "").strip()
         if not client_id or not client_secret:
             raise RuntimeError(
                 "Missing WCL_CLIENT_ID / WCL_CLIENT_SECRET. "
