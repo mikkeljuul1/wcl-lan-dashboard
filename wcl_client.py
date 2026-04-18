@@ -123,7 +123,7 @@ class WCLClient:
             keystoneAffixes
             averageItemLevel
           }
-          rankings
+          rankings(compare: Parses, playerMetric: default)
         }
       }
     }

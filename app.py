@@ -100,6 +100,67 @@ def _merge_table(fight: dict[str, Any], tables: dict[str, Any] | None) -> None:
         c["hps"] = round(heal_total / (active_heal / 1000), 1) if heal_total and active_heal else None
 
 
+# Specs that determine role without knowing the class.
+_TANK_SPECS = {"Blood", "Guardian", "Protection", "Brewmaster", "Vengeance"}
+_HEALER_SPECS = {
+    "Restoration", "Holy", "Discipline", "Mistweaver", "Preservation",
+}
+
+
+def _role_from_icon(icon: str | None) -> str:
+    """Infer role from a WCL ``icon`` string like ``"DeathKnight-Blood"``."""
+    if not icon or "-" not in icon:
+        return "DPS"
+    spec = icon.split("-", 1)[1]
+    if spec in _TANK_SPECS:
+        return "Tank"
+    if spec in _HEALER_SPECS:
+        return "Healer"
+    return "DPS"
+
+
+def _characters_from_tables(
+    tables: dict[str, Any] | None,
+    role_lookup: dict[str, str],
+) -> list[dict[str, Any]]:
+    """Build a character list from damage/healing tables when rankings are missing.
+
+    Used as a fallback when WCL hasn't yet indexed ranks for a fight.
+    No ``rankPercent`` / ``bracketPercent`` — those will be ``None``.
+    """
+    if not tables:
+        return []
+    by_name: dict[str, dict[str, Any]] = {}
+    for key, role_hint in (("damage", None), ("healing", None)):
+        table = tables.get(key) or {}
+        data = table.get("data") or {}
+        for entry in data.get("entries") or []:
+            if not isinstance(entry, dict):
+                continue
+            if entry.get("type") in (None, "NPC", "Boss", "Pet"):
+                continue
+            name = entry.get("name")
+            if not name:
+                continue
+            icon = entry.get("icon") or ""
+            spec = icon.split("-", 1)[1] if "-" in icon else None
+            role = role_lookup.get(name) or _role_from_icon(icon)
+            by_name.setdefault(
+                name,
+                {
+                    "id": None,
+                    "name": name,
+                    "class": entry.get("type"),
+                    "spec": spec,
+                    "role": role,
+                    "rankPercent": None,
+                    "bracketPercent": None,
+                    "amount": None,
+                },
+            )
+    return list(by_name.values())
+
+
 def build_dashboard(
     report: dict[str, Any],
     fight_tables: dict[int, dict[str, Any]] | None = None,
@@ -117,6 +178,17 @@ def build_dashboard(
     ) else []
     rankings_by_fight = {fr.get("fightID"): fr for fr in fight_rankings}
 
+    # Build a name -> role map from whichever fights do have ranking data,
+    # so fights missing rankings can still attribute role correctly.
+    role_by_name: dict[str, str] = {}
+    for fr in fight_rankings:
+        roles = fr.get("roles") or {}
+        for role_key, label in (("tanks", "Tank"), ("healers", "Healer"), ("dps", "DPS")):
+            for ch in (roles.get(role_key) or {}).get("characters") or []:
+                name = ch.get("name")
+                if name:
+                    role_by_name.setdefault(name, label)
+
     dungeons: list[dict[str, Any]] = []
     for fight in report.get("fights") or []:
         # Skip wipes — only show completed/timed runs.
@@ -126,6 +198,11 @@ def build_dashboard(
         fr = rankings_by_fight.get(fight_id) or {}
         characters = _flatten_characters(fr) if fr else []
         encounter = fr.get("encounter") or {}
+        # Fallback: if WCL hasn't indexed rankings for this fight yet, try to
+        # populate the player list from the fight's damage/healing tables so
+        # the dungeon still shows up with DPS/HPS (just without parse %).
+        if not characters and fight_tables and fight_id in fight_tables:
+            characters = _characters_from_tables(fight_tables[fight_id], role_by_name)
         dungeon = {
             "fightId": fight_id,
             "name": encounter.get("name") or fight.get("name"),
@@ -193,22 +270,17 @@ def dashboard() -> Any:
     try:
         client = get_client()
         report = client.get_report(code)
-        # Fetch damage/healing tables only for fights that have ranked characters.
-        rankings = (report.get("rankings") or {}).get("data") or []
-        ranked_fight_ids: list[int] = []
-        for fr in rankings:
-            roles = fr.get("roles") or {}
-            if any(
-                (roles.get(r) or {}).get("characters")
-                for r in ("tanks", "healers", "dps")
-            ):
-                fid = fr.get("fightID")
-                if isinstance(fid, int):
-                    ranked_fight_ids.append(fid)
+        # Fetch damage/healing tables for every completed (kill) fight, so the
+        # dashboard can populate player rows even when WCL hasn't yet indexed
+        # rankings for the most recent run.
+        kill_fight_ids: list[int] = []
+        for fight in report.get("fights") or []:
+            if fight.get("kill") is True and isinstance(fight.get("id"), int):
+                kill_fight_ids.append(fight["id"])
         fight_tables: dict[int, dict[str, Any]] = {}
-        if ranked_fight_ids:
+        if kill_fight_ids:
             try:
-                fight_tables = client.get_fight_tables(code, ranked_fight_ids)
+                fight_tables = client.get_fight_tables(code, kill_fight_ids)
             except Exception:
                 # Non-fatal: fall back to parse-only display.
                 app.logger.exception("Fetching fight tables failed")
