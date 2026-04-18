@@ -486,6 +486,17 @@ def auth_wcl_callback() -> Any:
         _store_oauth_token(payload)
     except Exception as exc:
         app.logger.exception("Exchanging OAuth authorization code failed")
+        msg = str(exc)
+        low = msg.lower()
+        if "invalid_client" in low or "client authentication failed" in low:
+            return jsonify({
+                "error": "OAuth client authentication failed",
+                "details": msg,
+                "hint": (
+                    "Verify WCL_CLIENT_ID/WCL_CLIENT_SECRET on the server match the exact "
+                    "Warcraft Logs API client used for Connect WCL, then restart the app."
+                ),
+            }), 502
         return jsonify({"error": str(exc)}), 502
 
     return redirect(url_for("index", auth="connected"))

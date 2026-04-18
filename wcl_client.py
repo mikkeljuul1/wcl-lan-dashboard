@@ -142,10 +142,26 @@ class WCLClient:
             auth=(self._client_id, self._client_secret),
             timeout=self._timeout,
         )
-        resp.raise_for_status()
-        payload = resp.json()
-        if not payload.get("access_token"):
-            raise RuntimeError("WCL OAuth response missing access_token")
+        try:
+            payload = resp.json()
+        except ValueError:
+            payload = {}
+
+        if not resp.ok:
+            if isinstance(payload, dict):
+                err = payload.get("error")
+                desc = payload.get("error_description") or payload.get("message")
+                if err or desc:
+                    raise RuntimeError(f"WCL OAuth token error: {err or 'unknown'} ({desc or 'no description'})")
+            resp.raise_for_status()
+
+        if not isinstance(payload, dict) or not payload.get("access_token"):
+            err = payload.get("error") if isinstance(payload, dict) else "invalid_response"
+            desc = (
+                payload.get("error_description") or payload.get("message")
+                if isinstance(payload, dict) else "response was not JSON"
+            )
+            raise RuntimeError(f"WCL OAuth token error: {err or 'missing_access_token'} ({desc or 'access token missing'})")
         return payload
 
     def refresh_user_access_token(self, refresh_token: str) -> dict[str, Any]:

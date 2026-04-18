@@ -110,6 +110,10 @@ body {
   font-size: 0.9rem;
 }
 
+.auth-link[hidden] {
+  display: none;
+}
+
 .auth-link:hover { background: #2b303c; }
 
 .auth-link:focus-visible {
