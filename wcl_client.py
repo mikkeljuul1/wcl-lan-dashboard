@@ -137,3 +137,43 @@ class WCLClient:
             raise RuntimeError(f"Report not found or not accessible: {code}")
         report["code"] = code
         return report
+
+    def get_fight_tables(
+        self, code: str, fight_ids: list[int]
+    ) -> dict[int, dict[str, Any]]:
+        """Fetch DamageDone + Healing tables for the given fight IDs.
+
+        Uses GraphQL field aliases to fetch everything in a single request.
+        Returns a dict keyed by fight id: ``{fight_id: {"damage": {...}, "healing": {...}}}``.
+        Fights that error out are silently omitted.
+        """
+        if not fight_ids:
+            return {}
+        code = extract_report_code(code)
+        # Build aliased fields: d123: table(fightIDs: [123], dataType: DamageDone) ...
+        field_lines: list[str] = []
+        for fid in fight_ids:
+            field_lines.append(
+                f"d{fid}: table(fightIDs: [{fid}], dataType: DamageDone)"
+            )
+            field_lines.append(
+                f"h{fid}: table(fightIDs: [{fid}], dataType: Healing)"
+            )
+        gql = (
+            "query($code: String!) {\n"
+            "  reportData {\n"
+            "    report(code: $code) {\n"
+            + "\n".join("      " + line for line in field_lines)
+            + "\n    }\n"
+            "  }\n"
+            "}\n"
+        )
+        data = self.query(gql, {"code": code})
+        report = (data.get("reportData") or {}).get("report") or {}
+        out: dict[int, dict[str, Any]] = {}
+        for fid in fight_ids:
+            out[fid] = {
+                "damage": report.get(f"d{fid}"),
+                "healing": report.get(f"h{fid}"),
+            }
+        return out

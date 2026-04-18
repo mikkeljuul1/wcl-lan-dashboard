@@ -4,6 +4,8 @@
 
 const REFRESH_MS = 10_000;
 const ROLE_PREF_KEY = "wcl.roleFilter";
+const BRACKET_PREF_KEY = "wcl.useBracket";
+const EXPANDED_PREF_KEY = "wcl.expanded";
 const ROLES = ["DPS", "Healer", "Tank"];
 
 const els = {
@@ -19,9 +21,34 @@ const els = {
   latestPlayers: document.getElementById("latest-players"),
   dungeonList:   document.getElementById("dungeon-list"),
   roleToggles:   document.querySelectorAll(".role-toggle"),
+  bracketToggle: document.getElementById("bracket-toggle"),
 };
 
 let refreshTimer = null;
+
+// Which dungeons are currently expanded. Keyed by fightId.
+const expanded = new Set();
+try {
+  const saved = JSON.parse(sessionStorage.getItem(EXPANDED_PREF_KEY) || "[]");
+  if (Array.isArray(saved)) saved.forEach((id) => expanded.add(id));
+} catch { /* ignore */ }
+
+function saveExpanded() {
+  try {
+    sessionStorage.setItem(EXPANDED_PREF_KEY, JSON.stringify([...expanded]));
+  } catch { /* ignore */ }
+}
+
+// Whether to show ilvl-bracket parses instead of overall parses.
+let useBracket = (() => {
+  try { return localStorage.getItem(BRACKET_PREF_KEY) === "1"; } catch { return false; }
+})();
+els.bracketToggle.checked = useBracket;
+els.bracketToggle.addEventListener("change", () => {
+  useBracket = els.bracketToggle.checked;
+  try { localStorage.setItem(BRACKET_PREF_KEY, useBracket ? "1" : "0"); } catch { /* ignore */ }
+  if (lastData) render(lastData);
+});
 let lastData = null; // raw payload from the server
 
 // --- role filter persistence ---------------------------------------------
@@ -86,6 +113,21 @@ function setStatus(msg, { error = false } = {}) {
   els.status.classList.toggle("error", Boolean(error));
 }
 
+// Value used for parse display/averaging — depends on bracket toggle.
+function parseValue(c) {
+  if (!c) return null;
+  const v = useBracket ? c.bracketPercent : c.rankPercent;
+  return typeof v === "number" && !Number.isNaN(v) ? v : null;
+}
+
+// Format DPS/HPS "amount" as 1.23M / 456k.
+function fmtAmount(n) {
+  if (typeof n !== "number" || !Number.isFinite(n) || n <= 0) return "";
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
+  return String(Math.round(n));
+}
+
 // --- averaging (filtered by selectedRoles) -------------------------------
 function filterChars(characters) {
   return (characters || []).filter((c) => selectedRoles.has(c.role));
@@ -93,8 +135,8 @@ function filterChars(characters) {
 
 function averageFor(characters) {
   const vals = filterChars(characters)
-    .map((c) => c.rankPercent)
-    .filter((v) => typeof v === "number" && !Number.isNaN(v));
+    .map(parseValue)
+    .filter((v) => v != null);
   if (!vals.length) return null;
   const sum = vals.reduce((a, b) => a + b, 0);
   return Math.round((sum / vals.length) * 10) / 10;
@@ -115,18 +157,30 @@ function renderPlayer(p) {
   role.textContent = [p.role, p.spec, p.class].filter(Boolean).join(" · ");
   left.append(name, role);
 
+  const pct = parseValue(p);
   const parse = document.createElement("div");
-  parse.className = `parse ${parseTier(p.rankPercent)}`;
-  parse.setAttribute("aria-label", `Parse ${fmtParse(p.rankPercent)} percent`);
-  parse.textContent = fmtParse(p.rankPercent);
+  parse.className = `parse ${parseTier(pct)}`;
+  parse.setAttribute(
+    "aria-label",
+    `${useBracket ? "Bracket parse" : "Parse"} ${fmtParse(pct)} percent`,
+  );
+  parse.textContent = fmtParse(pct);
 
   node.append(left, parse);
-  return node;
-}
 
-function renderDungeon(d) {
-  const li = document.createElement("li");
-  li.className = "dungeon";
+  const amount = fmtAmount(p.amount);
+  if (d.fightId != null && expanded.has(d.fightId)) li.setAttribute("open", "");
+
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "dungeon-summary";
+  const isOpen = d.fightId != null && expanded.has(d.fightId);
+  button.setAttribute("aria-expanded", isOpen ? "true" : "false");
+
+  const chev = document.createElement("span");
+  chev.className = "chev";
+  chev.setAttribute("aria-hidden", "true");
+  chev.textContent = "▶";
 
   const title = document.createElement("div");
   title.className = "title";
@@ -135,6 +189,66 @@ function renderDungeon(d) {
   if (d.keystoneLevel) {
     const badge = document.createElement("span");
     badge.className = "badge key";
+    badge.textContent = `+${d.keystoneLevel}`;
+    title.appendChild(badge);
+  }
+  if (d.kill === true) {
+    const badge = document.createElement("span");
+    badge.className = "badge kill";
+    badge.textContent = "Completed";
+    title.appendChild(badge);
+  } else if (d.kill === false) {
+    const badge = document.createElement("span");
+    badge.className = "badge wipe";
+    badge.textContent = "Wipe";
+    title.appendChild(badge);
+  }
+
+  const avgValue = averageFor(d.characters);
+  const avg = document.createElement("div");
+  avg.className = `avg parse ${parseTier(avgValue)}`;
+  avg.textContent = fmtParse(avgValue);
+
+  button.append(chev, title, avg);
+  li.appendChild(button);
+
+  const when = document.createElement("div");
+  when.className = "when";
+  const startedAt = fmtTime(d.startTime);
+  const dur = fmtDuration(d.duration);
+  when.textContent = [startedAt && `Started ${startedAt}`, dur && `Duration ${dur}`]
+    .filter(Boolean)
+    .join(" · ");
+  li.appendChild(when);
+
+  const details = document.createElement("div");
+  details.className = "dungeon-details";
+  if (!isOpen) details.setAttribute("hidden", "");
+  details.appendChild(
+    renderPlayerGrid(d.characters, {
+      emptyMessage:
+        d.kill === false
+          ? "No parse data for this run (wipe)."
+          : "No players match the current role filter.",
+    }),
+  );
+  li.appendChild(details);
+
+  button.addEventListener("click", () => {
+    const open = !li.hasAttribute("open");
+    if (open) {
+      li.setAttribute("open", "");
+      details.removeAttribute("hidden");
+      if (d.fightId != null) expanded.add(d.fightId);
+    } else {
+      li.removeAttribute("open");
+      details.setAttribute("hidden", "");
+      if (d.fightId != null) expanded.delete(d.fightId);
+    }
+    button.setAttribute("aria-expanded", open ? "true" : "false");
+    saveExpanded();
+  });
+ey";
     badge.textContent = `+${d.keystoneLevel}`;
     title.appendChild(badge);
   }
@@ -199,17 +313,14 @@ function render(data) {
     els.latestAverage.textContent = fmtParse(latestAvg);
     els.latestAverage.className = `big-number parse ${parseTier(latestAvg)}`;
 
-    const visible = filterChars(latest.characters);
-    if (visible.length) {
-      for (const p of visible) els.latestPlayers.appendChild(renderPlayer(p));
-    } else {
-      const empty = document.createElement("p");
-      empty.className = "sub";
-      empty.textContent = latest.kill === false
-        ? "No parse data for this run (wipe)."
-        : "No players match the current role filter.";
-      els.latestPlayers.appendChild(empty);
-    }
+    els.latestPlayers.appendChild(
+      renderPlayerGrid(latest.characters, {
+        emptyMessage:
+          latest.kill === false
+            ? "No parse data for this run (wipe)."
+            : "No players match the current role filter.",
+      }),
+    );
   } else {
     els.latestTitle.textContent = "No dungeons yet";
     els.latestAverage.textContent = "—";

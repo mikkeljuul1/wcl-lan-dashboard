@@ -63,7 +63,44 @@ def _flatten_characters(fight_rank: dict[str, Any]) -> list[dict[str, Any]]:
     return out
 
 
-def build_dashboard(report: dict[str, Any]) -> dict[str, Any]:
+def _merge_table(fight: dict[str, Any], tables: dict[str, Any] | None) -> None:
+    """Attach per-player damageDone / healingDone / DPS / HPS to characters."""
+    if not tables:
+        return
+    chars = fight.get("characters") or []
+    if not chars:
+        return
+
+    duration_ms = fight.get("duration") or 0
+
+    def _entries(key: str) -> dict[str, dict[str, Any]]:
+        table = tables.get(key)
+        if not isinstance(table, dict):
+            return {}
+        data = table.get("data") or {}
+        entries = data.get("entries") or []
+        return {e.get("name"): e for e in entries if isinstance(e, dict) and e.get("name")}
+
+    dmg_by_name = _entries("damage")
+    heal_by_name = _entries("healing")
+
+    for c in chars:
+        name = c.get("name")
+        d = dmg_by_name.get(name) or {}
+        h = heal_by_name.get(name) or {}
+        dmg_total = d.get("total") or 0
+        heal_total = h.get("total") or 0
+        active_dmg = d.get("activeTime") or duration_ms
+        active_heal = h.get("activeTime") or duration_ms
+        c["damageDone"] = dmg_total or None
+        c["healingDone"] = heal_total or None
+        c["dps"] = round(dmg_total / (active_dmg / 1000), 1) if dmg_total and active_dmg else None
+        c["hps"] = round(heal_total / (active_heal / 1000), 1) if heal_total and active_heal else None
+
+
+def build_dashboard(
+    report: dict[str, Any], fight_tables: dict[int, dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     """Shape a raw WCL report into the payload consumed by the frontend.
 
     Averaging (per-dungeon and session-wide) is intentionally done on the
@@ -83,25 +120,27 @@ def build_dashboard(report: dict[str, Any]) -> dict[str, Any]:
         fr = rankings_by_fight.get(fight_id) or {}
         characters = _flatten_characters(fr) if fr else []
         encounter = fr.get("encounter") or {}
-        dungeons.append(
-            {
-                "fightId": fight_id,
-                "name": encounter.get("name") or fight.get("name"),
-                "encounterId": encounter.get("id") or fight.get("encounterID"),
-                "startTime": fr.get("startTime") or fight.get("startTime"),
-                "duration": fr.get("duration")
-                or ((fight.get("endTime") or 0) - (fight.get("startTime") or 0)),
-                "kill": fight.get("kill"),
-                "keystoneLevel": fight.get("keystoneLevel"),
-                "keystoneTime": fight.get("keystoneTime"),
-                "averageItemLevel": fight.get("averageItemLevel"),
-                "characters": sorted(
-                    characters,
-                    key=lambda c: (c.get("rankPercent") or -1),
-                    reverse=True,
-                ),
-            }
+        dungeon = {
+            "fightId": fight_id,
+            "name": encounter.get("name") or fight.get("name"),
+            "encounterId": encounter.get("id") or fight.get("encounterID"),
+            "startTime": fr.get("startTime") or fight.get("startTime"),
+            "duration": fr.get("duration")
+            or ((fight.get("endTime") or 0) - (fight.get("startTime") or 0)),
+            "kill": fight.get("kill"),
+            "keystoneLevel": fight.get("keystoneLevel"),
+            "keystoneTime": fight.get("keystoneTime"),
+            "averageItemLevel": fight.get("averageItemLevel"),
+            "characters": characters,
+        }
+        if fight_tables and fight_id in fight_tables:
+            _merge_table(dungeon, fight_tables[fight_id])
+        dungeon["characters"] = sorted(
+            dungeon["characters"],
+            key=lambda c: (c.get("rankPercent") or -1),
+            reverse=True,
         )
+        dungeons.append(dungeon)
 
     # Sort chronologically; latest last.
     dungeons.sort(key=lambda d: d.get("startTime") or 0)
@@ -146,11 +185,31 @@ def dashboard() -> Any:
     if not code:
         return jsonify({"error": "No report selected"}), 404
     try:
-        report = get_client().get_report(code)
+        client = get_client()
+        report = client.get_report(code)
+        # Fetch damage/healing tables only for fights that have ranked characters.
+        rankings = (report.get("rankings") or {}).get("data") or []
+        ranked_fight_ids: list[int] = []
+        for fr in rankings:
+            roles = fr.get("roles") or {}
+            if any(
+                (roles.get(r) or {}).get("characters")
+                for r in ("tanks", "healers", "dps")
+            ):
+                fid = fr.get("fightID")
+                if isinstance(fid, int):
+                    ranked_fight_ids.append(fid)
+        fight_tables: dict[int, dict[str, Any]] = {}
+        if ranked_fight_ids:
+            try:
+                fight_tables = client.get_fight_tables(code, ranked_fight_ids)
+            except Exception:
+                # Non-fatal: fall back to parse-only display.
+                app.logger.exception("Fetching fight tables failed")
     except Exception as exc:  # surface API errors as JSON for the frontend
         app.logger.exception("WCL fetch failed")
         return jsonify({"error": str(exc)}), 502
-    return jsonify(build_dashboard(report))
+    return jsonify(build_dashboard(report, fight_tables))
 
 
 @app.route("/healthz")

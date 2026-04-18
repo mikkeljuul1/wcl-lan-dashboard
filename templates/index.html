@@ -35,6 +35,13 @@
       <label><input type="checkbox" class="role-toggle" value="Healer" checked /> Healers</label>
       <label><input type="checkbox" class="role-toggle" value="Tank" checked /> Tanks</label>
     </fieldset>
+    <fieldset class="role-filter">
+      <legend class="sr-only">Parse metric</legend>
+      <label>
+        <input type="checkbox" id="bracket-toggle" />
+        Item-level bracket parses
+      </label>
+    </fieldset>
   </nav>
 
   <main id="main" class="layout">
@@ -50,7 +57,7 @@
         <p id="latest-title" class="meta"></p>
       </header>
       <p class="big-number" id="latest-average">—</p>
-      <div id="latest-players" class="player-grid" role="list"></div>
+      <div id="latest-players"></div>
     </section>
 
     <section class="card dungeons" aria-labelledby="dungeons-heading">
