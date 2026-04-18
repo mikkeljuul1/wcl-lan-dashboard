@@ -20,6 +20,16 @@
 
 * { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text); }
+html {
+  /* Scale the entire UI with viewport width so a kiosk far from a 21:9
+     screen still reads cleanly. Browser default is 16px; we clamp between
+     18px and ~32px based on viewport width. */
+  font-size: clamp(18px, 1.35vw, 32px);
+}
+/* Ultra-wide (21:9 and wider) — push numbers even larger. */
+@media (min-aspect-ratio: 2/1) {
+  html { font-size: clamp(22px, 1.8vw, 40px); }
+}
 body {
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   min-height: 100vh;
@@ -46,8 +56,8 @@ body {
   background: var(--panel);
   border-bottom: 1px solid var(--border);
 }
-.brand h1 { margin: 0; font-size: 1.25rem; }
-.meta { margin: 0.15rem 0 0; color: var(--muted); font-size: 0.9rem; }
+.brand h1 { margin: 0; font-size: 1.6rem; }
+.meta { margin: 0.15rem 0 0; color: var(--muted); font-size: 1rem; }
 
 .report-form { display: flex; gap: 0.5rem; flex: 1 1 320px; max-width: 560px; }
 .report-form input[type="text"] {
@@ -128,7 +138,7 @@ body {
   border-radius: 10px;
   padding: 1.25rem;
 }
-.card h2 { margin: 0 0 0.75rem; font-size: 1.05rem; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
+.card h2 { margin: 0 0 0.75rem; font-size: 1.2rem; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
 .card-head { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; margin-bottom: 0.5rem; }
 .card-head h2 { margin: 0; }
 
@@ -142,20 +152,20 @@ body {
 
 .big-number {
   margin: 0;
-  font-size: 3.5rem;
+  font-size: 5.5rem;
   font-weight: 700;
   line-height: 1.05;
   color: var(--accent);
   font-variant-numeric: tabular-nums;
 }
-.sub { color: var(--muted); margin: 0.25rem 0 0; }
-.key-inline { font-variant-numeric: tabular-nums; font-weight: 600; }
+.sub { color: var(--muted); margin: 0.35rem 0 0; font-size: 1.1rem; }
+.key-inline { font-variant-numeric: tabular-nums; font-weight: 600; font-size: 1.75rem; }
 
 /* Player grid ----------------------------------------------------------- */
 .player-grid {
   display: grid;
-  gap: 0.5rem;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 0.6rem;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
   margin-top: 0.75rem;
 }
 .player {
@@ -168,16 +178,16 @@ body {
   border: 1px solid var(--border);
   border-radius: 8px;
 }
-.player .name { font-weight: 600; }
-.player .role { color: var(--muted); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.04em; }
+.player .name { font-weight: 600; font-size: 1.25rem; }
+.player .role { color: var(--muted); font-size: 0.95rem; text-transform: uppercase; letter-spacing: 0.04em; }
 .player .parses {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
   gap: 0.1rem;
 }
-.player .parse { font-weight: 700; font-variant-numeric: tabular-nums; font-size: 1.05rem; line-height: 1.1; }
-.player .parse.key-parse { font-size: 0.85rem; font-weight: 600; opacity: 0.9; }
+.player .parse { font-weight: 700; font-variant-numeric: tabular-nums; font-size: 1.8rem; line-height: 1.1; }
+.player .parse.key-parse { font-size: 1.1rem; font-weight: 600; opacity: 0.9; }
 .player .parse.key-parse::before {
   content: "Key ";
   color: var(--muted);
@@ -187,7 +197,7 @@ body {
   grid-column: 2;
   justify-self: end;
   color: var(--muted);
-  font-size: 0.8rem;
+  font-size: 1rem;
   font-variant-numeric: tabular-nums;
 }
 
@@ -226,21 +236,22 @@ body {
   display: inline-block;
 }
 .dungeon[open] .dungeon-summary .chev { transform: rotate(90deg); }
-.dungeon .title { font-weight: 600; }
+.dungeon .title { font-weight: 600; font-size: 1.35rem; }
 .dungeon .title .badge {
   display: inline-block;
   margin-left: 0.5rem;
-  padding: 0.05rem 0.45rem;
+  padding: 0.1rem 0.55rem;
   border-radius: 999px;
   background: #30384a;
   color: var(--text);
-  font-size: 0.75rem;
+  font-size: 0.9rem;
+  vertical-align: middle;
 }
 .dungeon .title .badge.key { background: #483a1a; color: var(--accent); }
 .dungeon .title .badge.kill { background: #1f3a24; color: var(--good); }
 .dungeon .title .badge.wipe { background: #3a1f1f; color: var(--bad); }
-.dungeon .avg { font-size: 1.5rem; font-weight: 700; color: var(--accent); font-variant-numeric: tabular-nums; line-height: 1.1; }
-.dungeon .avg.key-parse { font-size: 0.9rem; font-weight: 600; opacity: 0.9; }
+.dungeon .avg { font-size: 2.25rem; font-weight: 700; color: var(--accent); font-variant-numeric: tabular-nums; line-height: 1.1; }
+.dungeon .avg.key-parse { font-size: 1.15rem; font-weight: 600; opacity: 0.9; }
 .dungeon .avg.key-parse::before {
   content: "Key ";
   color: var(--muted);
@@ -256,7 +267,7 @@ body {
   grid-column: 1 / -1;
   padding: 0 1rem 0.5rem 1rem;
   color: var(--muted);
-  font-size: 0.85rem;
+  font-size: 1rem;
   margin-top: -0.35rem;
 }
 .dungeon-details {
