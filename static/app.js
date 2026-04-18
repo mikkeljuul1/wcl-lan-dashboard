@@ -35,7 +35,7 @@ function saveExpanded() {
   } catch { /* ignore */ }
 }
 
-// Whether to show ilvl-bracket parses instead of overall parses.
+// Latest payload from the server; re-rendered when role filters change.
 let lastData = null; // raw payload from the server
 
 // --- role filter persistence ---------------------------------------------
@@ -100,13 +100,6 @@ function setStatus(msg, { error = false } = {}) {
   els.status.classList.toggle("error", Boolean(error));
 }
 
-// Overall rank percentile (used for averaging and the primary big number).
-function parseValue(c) {
-  if (!c) return null;
-  const v = c.rankPercent;
-  return typeof v === "number" && !Number.isNaN(v) ? v : null;
-}
-
 // "Key %" — percentile within the keystone-level bracket.
 function bracketValue(c) {
   if (!c) return null;
@@ -128,15 +121,6 @@ function filterChars(characters) {
 }
 
 function averageFor(characters) {
-  const vals = filterChars(characters)
-    .map(parseValue)
-    .filter((v) => v != null);
-  if (!vals.length) return null;
-  const sum = vals.reduce((a, b) => a + b, 0);
-  return Math.round((sum / vals.length) * 10) / 10;
-}
-
-function bracketAverageFor(characters) {
   const vals = filterChars(characters)
     .map(bracketValue)
     .filter((v) => v != null);
@@ -160,23 +144,17 @@ function renderPlayer(p) {
   role.textContent = [p.role, p.spec, p.class].filter(Boolean).join(" · ");
   left.append(name, role);
 
-  const pct = parseValue(p);
   const keyPct = bracketValue(p);
 
   const parses = document.createElement("div");
   parses.className = "parses";
-
-  const parse = document.createElement("div");
-  parse.className = `parse ${parseTier(pct)}`;
-  parse.setAttribute("aria-label", `Overall parse ${fmtParse(pct)} percent`);
-  parse.textContent = fmtParse(pct);
 
   const keyParse = document.createElement("div");
   keyParse.className = `parse key-parse ${parseTier(keyPct)}`;
   keyParse.setAttribute("aria-label", `Key percent ${fmtParse(keyPct)}`);
   keyParse.textContent = fmtParse(keyPct);
 
-  parses.append(parse, keyParse);
+  parses.append(keyParse);
   node.append(left, parses);
 
   // Second row: throughput (DPS for DPS/Tank, HPS for Healers). Falls back
@@ -252,19 +230,14 @@ function renderDungeon(d) {
     title.appendChild(badge);
   }
 
-  const avgValue = averageFor(d.characters);
-  const keyAvgValue = bracketAverageFor(d.characters);
+  const keyAvgValue = averageFor(d.characters);
   const avgWrap = document.createElement("div");
   avgWrap.className = "avg-pair";
-  const avg = document.createElement("div");
-  avg.className = `avg parse ${parseTier(avgValue)}`;
-  avg.textContent = fmtParse(avgValue);
-  avg.setAttribute("aria-label", `Overall parse average ${fmtParse(avgValue)}`);
   const keyAvg = document.createElement("div");
   keyAvg.className = `avg key-parse parse ${parseTier(keyAvgValue)}`;
   keyAvg.textContent = fmtParse(keyAvgValue);
   keyAvg.setAttribute("aria-label", `Key percent average ${fmtParse(keyAvgValue)}`);
-  avgWrap.append(avg, keyAvg);
+  avgWrap.append(keyAvg);
 
   button.append(chev, title, avgWrap);
   li.appendChild(button);
@@ -285,7 +258,7 @@ function renderDungeon(d) {
     renderPlayerGrid(d.characters, {
       emptyMessage:
         d.kill === false
-          ? "No parse data for this run (wipe)."
+          ? "No key ranking data for this run (wipe)."
           : "No players match the current role filter.",
     }),
   );
@@ -316,20 +289,13 @@ function render(data) {
 
   const dungeons = data.dungeons || [];
 
-  // Session average across all dungeons, filtered by selected roles.
+  // Session key average across all dungeons, filtered by selected roles.
   const allChars = dungeons.flatMap((d) => d.characters || []);
-  const sessionAvg = averageFor(allChars);
-  const sessionKeyAvg = bracketAverageFor(allChars);
-  els.sessionAvg.textContent = fmtParse(sessionAvg);
-  els.sessionAvg.className = `big-number parse ${parseTier(sessionAvg)}`;
-  els.sessionSub.innerHTML = "";
-  const sessionSubLeft = document.createElement("span");
-  sessionSubLeft.textContent =
+  const sessionKeyAvg = averageFor(allChars);
+  els.sessionAvg.textContent = fmtParse(sessionKeyAvg);
+  els.sessionAvg.className = `big-number parse ${parseTier(sessionKeyAvg)}`;
+  els.sessionSub.textContent =
     dungeons.length === 1 ? "Across 1 dungeon" : `Across ${dungeons.length} dungeons`;
-  const sessionKey = document.createElement("span");
-  sessionKey.className = `key-inline parse ${parseTier(sessionKeyAvg)}`;
-  sessionKey.textContent = `Key % ${fmtParse(sessionKeyAvg)}`;
-  els.sessionSub.append(sessionSubLeft, " · ", sessionKey);
 
   // Latest dungeon = most recent by startTime.
   const latest = dungeons.length
@@ -344,21 +310,16 @@ function render(data) {
     if (latest.kill === false) bits.push("Wipe");
     els.latestTitle.textContent = bits.join(" · ");
 
-    const latestAvg = averageFor(latest.characters);
-    const latestKeyAvg = bracketAverageFor(latest.characters);
-    els.latestAverage.textContent = fmtParse(latestAvg);
-    els.latestAverage.className = `big-number parse ${parseTier(latestAvg)}`;
-    els.latestSub.replaceChildren();
-    const latestKey = document.createElement("span");
-    latestKey.className = `key-inline parse ${parseTier(latestKeyAvg)}`;
-    latestKey.textContent = `Key % ${fmtParse(latestKeyAvg)}`;
-    els.latestSub.append("Overall · ", latestKey);
+    const latestKeyAvg = averageFor(latest.characters);
+    els.latestAverage.textContent = fmtParse(latestKeyAvg);
+    els.latestAverage.className = `big-number parse ${parseTier(latestKeyAvg)}`;
+    els.latestSub.textContent = "Key % average";
 
     els.latestPlayers.appendChild(
       renderPlayerGrid(latest.characters, {
         emptyMessage:
           latest.kill === false
-            ? "No parse data for this run (wipe)."
+            ? "No key ranking data for this run (wipe)."
             : "No players match the current role filter.",
       }),
     );
