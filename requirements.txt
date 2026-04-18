@@ -1,3 +1,7 @@
 Flask>=3.0,<4.0
 requests>=2.31,<3.0
 python-dotenv>=1.0,<2.0
+# Used by scraper.py to talk to warcraftlogs.com with a real Chrome TLS
+# fingerprint (raw `requests` is blocked by Cloudflare).
+curl_cffi>=0.7,<1.0
+

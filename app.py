@@ -17,6 +17,7 @@ from dotenv import load_dotenv
 from flask import Flask, jsonify, redirect, render_template, request, session, url_for
 
 from wcl_client import WCLClient, extract_report_code
+from scraper import WCLScraper
 
 # Force local .env precedence so stale process-level env vars (e.g. from
 # systemd unit overrides) cannot shadow updated credentials.
@@ -27,6 +28,16 @@ app.secret_key = os.environ.get("FLASK_SECRET_KEY") or os.urandom(32)
 
 # --- singletons -----------------------------------------------------------
 _client: WCLClient | None = None
+_scraper: WCLScraper | None = None
+
+
+def get_scraper() -> WCLScraper:
+    """Return the shared scraper. Cheap to construct but reusing the
+    underlying ``curl_cffi`` session keeps the cookie warm-up state."""
+    global _scraper
+    if _scraper is None:
+        _scraper = WCLScraper()
+    return _scraper
 
 
 def get_client() -> WCLClient:
@@ -68,6 +79,7 @@ _state: dict[str, Any] = {
 _AUTO_POLL_SECONDS = 60.0
 
 _OAUTH_STATE_KEY = "wcl_oauth_state"
+_OAUTH_PKCE_VERIFIER_KEY = "wcl_oauth_pkce_verifier"
 _OAUTH_TOKEN_KEY = "wcl_oauth_token"
 
 
@@ -104,6 +116,11 @@ def _store_oauth_token(payload: dict[str, Any]) -> None:
 
 def _clear_oauth_state() -> None:
     session.pop(_OAUTH_STATE_KEY, None)
+    session.pop(_OAUTH_PKCE_VERIFIER_KEY, None)
+    session.modified = True
+
+
+def _clear_oauth_token() -> None:
     session.pop(_OAUTH_TOKEN_KEY, None)
     session.modified = True
 
@@ -119,14 +136,14 @@ def _get_user_access_token(client: WCLClient) -> str | None:
             return access
     refresh_token = token.get("refresh_token")
     if not isinstance(refresh_token, str) or not refresh_token:
-        _clear_oauth_state()
+        _clear_oauth_token()
         return None
     try:
         refreshed = client.refresh_user_access_token(refresh_token)
         _store_oauth_token(refreshed)
     except Exception:
         app.logger.exception("Refreshing user OAuth token failed")
-        _clear_oauth_state()
+        _clear_oauth_token()
         return None
     token = _oauth_token_from_session()
     access = (token or {}).get("access_token")
@@ -452,11 +469,16 @@ def auth_wcl_start() -> Any:
     if not _oauth_enabled():
         return jsonify({"error": "OAuth is not configured"}), 404
     state = secrets.token_urlsafe(24)
+    verifier = secrets.token_urlsafe(64)
+    challenge = get_client().build_pkce_challenge(verifier)
     session[_OAUTH_STATE_KEY] = state
+    session[_OAUTH_PKCE_VERIFIER_KEY] = verifier
     session.modified = True
     auth_url = get_client().build_authorize_url(
         redirect_uri=_oauth_redirect_uri(),
         state=state,
+        code_challenge=challenge,
+        code_challenge_method="S256",
     )
     return redirect(auth_url)
 
@@ -466,31 +488,58 @@ def auth_wcl_callback() -> Any:
     if not _oauth_enabled():
         return jsonify({"error": "OAuth is not configured"}), 404
     expected_state = session.get(_OAUTH_STATE_KEY)
+    code_verifier = session.get(_OAUTH_PKCE_VERIFIER_KEY)
     returned_state = (request.args.get("state") or "").strip()
-    _clear_oauth_state()
 
     if not expected_state or returned_state != expected_state:
+        _clear_oauth_state()
         return jsonify({"error": "OAuth state mismatch"}), 400
 
     error = (request.args.get("error") or "").strip()
     if error:
+        _clear_oauth_state()
         return jsonify({"error": f"OAuth authorization failed: {error}"}), 400
 
     code = (request.args.get("code") or "").strip()
     if not code:
+        _clear_oauth_state()
         return jsonify({"error": "OAuth callback missing code"}), 400
 
+    payload = None
+    fallback_attempted = False
     try:
         payload = get_client().exchange_authorization_code(
             code=code,
             redirect_uri=_oauth_redirect_uri(),
         )
-        _store_oauth_token(payload)
     except Exception as exc:
-        app.logger.exception("Exchanging OAuth authorization code failed")
+        app.logger.exception("Exchanging OAuth authorization code failed (confidential client flow)")
         msg = str(exc)
         low = msg.lower()
-        if "invalid_client" in low or "client authentication failed" in low:
+        is_invalid_client = "invalid_client" in low or "client authentication failed" in low
+        if is_invalid_client and isinstance(code_verifier, str) and code_verifier:
+            fallback_attempted = True
+            try:
+                payload = get_client().exchange_authorization_code_pkce(
+                    code=code,
+                    redirect_uri=_oauth_redirect_uri(),
+                    code_verifier=code_verifier,
+                )
+            except Exception as pkce_exc:
+                app.logger.exception("Exchanging OAuth authorization code failed (PKCE fallback)")
+                _clear_oauth_state()
+                pkce_msg = str(pkce_exc)
+                return jsonify({
+                    "error": "OAuth client authentication failed",
+                    "details": pkce_msg,
+                    "hint": (
+                        "Warcraft Logs rejected both confidential and PKCE token exchange. "
+                        "Verify this client allows Authorization Code flow with callback URL "
+                        "exactly matching WCL_OAUTH_REDIRECT_URI."
+                    ),
+                }), 502
+        elif is_invalid_client:
+            _clear_oauth_state()
             return jsonify({
                 "error": "OAuth client authentication failed",
                 "details": msg,
@@ -499,7 +548,19 @@ def auth_wcl_callback() -> Any:
                     "Warcraft Logs API client used for Connect WCL, then restart the app."
                 ),
             }), 502
-        return jsonify({"error": str(exc)}), 502
+        else:
+            _clear_oauth_state()
+            return jsonify({"error": str(exc)}), 502
+
+    if not isinstance(payload, dict):
+        _clear_oauth_state()
+        return jsonify({"error": "OAuth token response was invalid"}), 502
+
+    _store_oauth_token(payload)
+    _clear_oauth_state()
+
+    if fallback_attempted:
+        app.logger.info("OAuth token exchange succeeded via PKCE fallback")
 
     return redirect(url_for("index", auth="connected"))
 
@@ -523,6 +584,7 @@ def auth_status() -> Any:
 
 @app.route("/api/auth/logout", methods=["POST"])
 def auth_logout() -> Any:
+    _clear_oauth_token()
     _clear_oauth_state()
     return jsonify({"ok": True})
 
@@ -563,95 +625,21 @@ def session_endpoint() -> Any:
 
 @app.route("/api/dashboard")
 def dashboard() -> Any:
-    client = get_client()
     code = (request.args.get("code") or "").strip()
     if not code:
-        # Prefer the manually selected code; otherwise fall back to the newest
-        # report from the configured WCL_USER_ID.
-        if _state.get("manual_override") and _state.get("report_code"):
-            code = _state["report_code"]
-        else:
-            code = _resolve_auto_code(client) or _state.get("report_code") or ""
-            if code:
-                _state["report_code"] = code
+        # The kiosk only ever shows the report the user pasted into the
+        # session field. Auto-tracking via the WCL OAuth API is no longer
+        # used because the public website scrape always reflects what the
+        # user actually sees in their browser.
+        code = _state.get("report_code") or ""
     if not code:
         return jsonify({"error": "No report selected"}), 404
     try:
-        report = client.get_report(code)
-        user_token = _get_user_access_token(client)
-        if user_token:
-            try:
-                private_rankings = client.get_report_rankings_user(code, user_token)
-                report["rankings"] = _merge_rankings(report.get("rankings"), private_rankings)
-            except Exception:
-                # Non-fatal: keep public rankings if user endpoint data fails.
-                app.logger.exception("Fetching user-scoped rankings failed")
-
-        # Fetch damage/healing tables for every completed (kill) fight, so the
-        # dashboard can populate player rows even when WCL hasn't yet indexed
-        # rankings for the most recent run.
-        kill_fight_ids: list[int] = []
-        for fight in report.get("fights") or []:
-            if fight.get("kill") is True and isinstance(fight.get("id"), int):
-                kill_fight_ids.append(fight["id"])
-        fight_tables: dict[int, dict[str, Any]] = {}
-        if kill_fight_ids:
-            try:
-                fight_tables = client.get_fight_tables(code, kill_fight_ids)
-            except Exception:
-                # Non-fatal: fall back to parse-only display.
-                app.logger.exception("Fetching fight tables failed")
-
-        # Build per-character parse lookups. WCL's report.rankings field only
-        # returns group-level placeholders for M+, so we query each character's
-        # personal encounterRankings and match by absolute fight start time.
-        report_start = report.get("startTime") or 0
-        fight_by_id = {
-            f.get("id"): f for f in (report.get("fights") or []) if f.get("kill") is True
-        }
-        fight_rankings = (
-            (report.get("rankings") or {}).get("data") or []
-            if isinstance(report.get("rankings"), dict) else []
-        )
-        # name -> (id, encounterId, metric_role)
-        player_info: dict[str, dict[str, Any]] = {}
-        for fr in fight_rankings:
-            enc_id = (fr.get("encounter") or {}).get("id")
-            # Use dps for all roles to mirror the WCL Damage Done table.
-            for role_key, metric in (("tanks", "dps"), ("dps", "dps"), ("healers", "dps")):
-                for ch in ((fr.get("roles") or {}).get(role_key) or {}).get("characters") or []:
-                    name = ch.get("name")
-                    cid = ch.get("id")
-                    if name and isinstance(cid, int) and isinstance(enc_id, int):
-                        player_info.setdefault(
-                            name, {"id": cid, "encounterId": enc_id, "metric": metric}
-                        )
-        # Build lookups: one (character, fight) pair per completed fight per player.
-        lookups: list[dict[str, Any]] = []
-        report_code = report.get("code")
-        for fid, fight in fight_by_id.items():
-            abs_start = (fight.get("startTime") or 0) + report_start
-            enc_id = fight.get("encounterID")
-            for name, info in player_info.items():
-                eid = enc_id if isinstance(enc_id, int) else info["encounterId"]
-                lookups.append({
-                    "characterId": info["id"],
-                    "encounterId": eid,
-                    "fightId": fid,
-                    "absStartTime": abs_start,
-                    "reportCode": report_code,
-                    "metric": info["metric"],
-                })
-        char_parses: dict[tuple[int, int], dict[str, float]] = {}
-        if lookups:
-            try:
-                char_parses = client.get_ilvl_bracket_parses(lookups)
-            except Exception:
-                app.logger.exception("Fetching per-character parses failed")
-    except Exception as exc:  # surface API errors as JSON for the frontend
-        app.logger.exception("WCL fetch failed")
+        payload = get_scraper().build_payload(code)
+    except Exception as exc:  # surface scrape errors as JSON for the frontend
+        app.logger.exception("WCL scrape failed")
         return jsonify({"error": str(exc)}), 502
-    return jsonify(build_dashboard(report, fight_tables, char_parses))
+    return jsonify(payload)
 
 
 @app.route("/healthz")

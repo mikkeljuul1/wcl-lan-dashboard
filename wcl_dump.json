@@ -1,0 +1,847 @@
+﻿{
+  "title": "Mythic+ Season 1",
+  "startTime": 1776495335516,
+  "endTime": 1776519820794,
+  "owner": {
+    "name": "mixtheman"
+  },
+  "zone": {
+    "name": "Mythic+ Season 1"
+  },
+  "fights": [
+    {
+      "id": 1,
+      "name": "Nexus-Point Xenas",
+      "difficulty": 10,
+      "kill": true,
+      "startTime": 8521711,
+      "endTime": 10268625,
+      "encounterID": 12915,
+      "keystoneLevel": 13,
+      "keystoneTime": 1933678,
+      "keystoneAffixes": [
+        9,
+        10,
+        147
+      ],
+      "averageItemLevel": 273.20001220703125
+    },
+    {
+      "id": 2,
+      "name": "Nexus-Point Xenas",
+      "difficulty": 10,
+      "kill": true,
+      "startTime": 10514540,
+      "endTime": 12053870,
+      "encounterID": 12915,
+      "keystoneLevel": 13,
+      "keystoneTime": 1665917,
+      "keystoneAffixes": [
+        9,
+        10,
+        147
+      ],
+      "averageItemLevel": 273.20001220703125
+    },
+    {
+      "id": 3,
+      "name": "Skyreach",
+      "difficulty": 10,
+      "kill": false,
+      "startTime": 19378406,
+      "endTime": 19540056,
+      "encounterID": 61209,
+      "keystoneLevel": 12,
+      "keystoneTime": null,
+      "keystoneAffixes": [
+        9,
+        10,
+        147
+      ],
+      "averageItemLevel": 272.20001220703125
+    },
+    {
+      "id": 4,
+      "name": "Skyreach",
+      "difficulty": 10,
+      "kill": true,
+      "startTime": 19540155,
+      "endTime": 20989095,
+      "encounterID": 61209,
+      "keystoneLevel": 12,
+      "keystoneTime": 1485047,
+      "keystoneAffixes": [
+        9,
+        10,
+        147
+      ],
+      "averageItemLevel": 272.20001220703125
+    },
+    {
+      "id": 5,
+      "name": "Algeth'ar Academy",
+      "difficulty": 10,
+      "kill": true,
+      "startTime": 22464435,
+      "endTime": 24484865,
+      "encounterID": 112526,
+      "keystoneLevel": 13,
+      "keystoneTime": 2146801,
+      "keystoneAffixes": [
+        9,
+        10,
+        147
+      ],
+      "averageItemLevel": 273
+    }
+  ],
+  "rankings": {
+    "data": [
+      {
+        "fightID": 1,
+        "partition": 1,
+        "zone": 47,
+        "encounter": {
+          "id": 12915,
+          "name": "Nexus-Point Xenas"
+        },
+        "difficulty": 10,
+        "size": 5,
+        "kill": 1,
+        "duration": 1933678,
+        "bracketData": 13,
+        "deaths": 13,
+        "damageTakenExcludingTanks": 171103563,
+        "roles": {
+          "tanks": {
+            "name": "Tanks",
+            "characters": [
+              {
+                "id": 77814822,
+                "name": "Twebbles",
+                "server": {
+                  "id": 329,
+                  "name": "Silvermoon",
+                  "region": "EU"
+                },
+                "class": "DeathKnight",
+                "spec": "Blood",
+                "amount": 71470.84882000089,
+                "bracketData": 13,
+                "bracket": 12,
+                "rank": "~2706",
+                "best": "-",
+                "totalParses": 27069,
+                "bracketPercent": 95,
+                "rankPercent": 90
+              }
+            ]
+          },
+          "healers": {
+            "name": "Healers",
+            "characters": [
+              {
+                "id": 88361556,
+                "name": "Dotus",
+                "server": {
+                  "id": 283,
+                  "name": "Draenor",
+                  "region": "EU"
+                },
+                "class": "Druid",
+                "spec": "Restoration",
+                "amount": 5916.5548799932,
+                "bracketData": 13,
+                "bracket": 12,
+                "rank": "~16057",
+                "best": "-",
+                "totalParses": 80288,
+                "bracketPercent": 66,
+                "rankPercent": 80
+              }
+            ]
+          },
+          "dps": {
+            "name": "Damage Dealers",
+            "characters": [
+              {
+                "id": 88361550,
+                "name": "Fondueoracle",
+                "server": {
+                  "id": 283,
+                  "name": "Draenor",
+                  "region": "EU"
+                },
+                "class": "Paladin",
+                "spec": "Retribution",
+                "amount": 74099.85892000794,
+                "bracketData": 13,
+                "bracket": 12,
+                "rank": "~11268",
+                "best": "-",
+                "totalParses": 70430,
+                "bracketPercent": 7,
+                "rankPercent": 84
+              },
+              {
+                "id": 38453488,
+                "name": "Datguyfredd",
+                "server": {
+                  "id": 283,
+                  "name": "Draenor",
+                  "region": "EU"
+                },
+                "class": "Rogue",
+                "spec": "Subtlety",
+                "amount": 77158.09044000506,
+                "bracketData": 13,
+                "bracket": 12,
+                "rank": "~2272",
+                "best": "-",
+                "totalParses": 20655,
+                "bracketPercent": 9,
+                "rankPercent": 89
+              },
+              {
+                "id": 58818418,
+                "name": "Destroying",
+                "server": {
+                  "id": 283,
+                  "name": "Draenor",
+                  "region": "EU"
+                },
+                "class": "Warlock",
+                "spec": "Demonology",
+                "amount": 69955.93630000949,
+                "bracketData": 13,
+                "bracket": 12,
+                "rank": "~14494",
+                "best": "-",
+                "totalParses": 69020,
+                "bracketPercent": 2,
+                "rankPercent": 79
+              }
+            ]
+          }
+        },
+        "bracket": 12,
+        "affixes": [
+          9,
+          10,
+          147
+        ],
+        "team": [
+          {
+            "id": 38453488,
+            "name": "Datguyfredd",
+            "class": "Rogue",
+            "spec": "Subtlety",
+            "role": "DPS"
+          },
+          {
+            "id": 58818418,
+            "name": "Destroying",
+            "class": "Warlock",
+            "spec": "Demonology",
+            "role": "DPS"
+          },
+          {
+            "id": 77814822,
+            "name": "Twebbles",
+            "class": "DeathKnight",
+            "spec": "Blood",
+            "role": "Tank"
+          },
+          {
+            "id": 88361550,
+            "name": "Fondueoracle",
+            "class": "Paladin",
+            "spec": "Retribution",
+            "role": "DPS"
+          },
+          {
+            "id": 88361556,
+            "name": "Dotus",
+            "class": "Druid",
+            "spec": "Restoration",
+            "role": "Healer"
+          }
+        ],
+        "computedScore": 317.2200012207,
+        "medal": "none",
+        "reportsBlacklistForCharacters": [],
+        "speed": {
+          "rank": "~128460",
+          "best": "~128460",
+          "totalParses": 1167826,
+          "rankPercent": 89
+        },
+        "score": {
+          "rank": "~642304",
+          "best": "~642304",
+          "totalParses": 1167826,
+          "rankPercent": 45
+        }
+      },
+      {
+        "fightID": 2,
+        "partition": 1,
+        "zone": 47,
+        "encounter": {
+          "id": 12915,
+          "name": "Nexus-Point Xenas"
+        },
+        "difficulty": 10,
+        "size": 5,
+        "kill": 1,
+        "duration": 1665917,
+        "bracketData": 13,
+        "deaths": 9,
+        "damageTakenExcludingTanks": 136848494,
+        "roles": {
+          "tanks": {
+            "name": "Tanks",
+            "characters": [
+              {
+                "id": 77814822,
+                "name": "Twebbles",
+                "server": {
+                  "id": 329,
+                  "name": "Silvermoon",
+                  "region": "EU"
+                },
+                "class": "DeathKnight",
+                "spec": "Blood",
+                "amount": 66779.96263000369,
+                "bracketData": 13,
+                "bracket": 12,
+                "rank": "~2706",
+                "best": "-",
+                "totalParses": 27069,
+                "bracketPercent": 89,
+                "rankPercent": 90
+              }
+            ]
+          },
+          "healers": {
+            "name": "Healers",
+            "characters": [
+              {
+                "id": 88361556,
+                "name": "Dotus",
+                "server": {
+                  "id": 283,
+                  "name": "Draenor",
+                  "region": "EU"
+                },
+                "class": "Druid",
+                "spec": "Restoration",
+                "amount": 8720.864239990711,
+                "bracketData": 13,
+                "bracket": 12,
+                "rank": "~16057",
+                "best": "-",
+                "totalParses": 80288,
+                "bracketPercent": 84,
+                "rankPercent": 80
+              }
+            ]
+          },
+          "dps": {
+            "name": "Damage Dealers",
+            "characters": [
+              {
+                "id": 88361550,
+                "name": "Fondueoracle",
+                "server": {
+                  "id": 283,
+                  "name": "Draenor",
+                  "region": "EU"
+                },
+                "class": "Paladin",
+                "spec": "Retribution",
+                "amount": 75592.33803001046,
+                "bracketData": 13,
+                "bracket": 12,
+                "rank": "~11268",
+                "best": "-",
+                "totalParses": 70430,
+                "bracketPercent": 8,
+                "rankPercent": 84
+              },
+              {
+                "id": 38453488,
+                "name": "Datguyfredd",
+                "server": {
+                  "id": 283,
+                  "name": "Draenor",
+                  "region": "EU"
+                },
+                "class": "Rogue",
+                "spec": "Subtlety",
+                "amount": 83887.70568999648,
+                "bracketData": 13,
+                "bracket": 12,
+                "rank": "~2272",
+                "best": "-",
+                "totalParses": 20655,
+                "bracketPercent": 21,
+                "rankPercent": 89
+              },
+              {
+                "id": 58818418,
+                "name": "Destroying",
+                "server": {
+                  "id": 283,
+                  "name": "Draenor",
+                  "region": "EU"
+                },
+                "class": "Warlock",
+                "spec": "Demonology",
+                "amount": 86441.86054998636,
+                "bracketData": 13,
+                "bracket": 12,
+                "rank": "~14494",
+                "best": "-",
+                "totalParses": 69020,
+                "bracketPercent": 16,
+                "rankPercent": 79
+              }
+            ]
+          }
+        },
+        "bracket": 12,
+        "affixes": [
+          9,
+          10,
+          147
+        ],
+        "team": [
+          {
+            "id": 38453488,
+            "name": "Datguyfredd",
+            "class": "Rogue",
+            "spec": "Subtlety",
+            "role": "DPS"
+          },
+          {
+            "id": 58818418,
+            "name": "Destroying",
+            "class": "Warlock",
+            "spec": "Demonology",
+            "role": "DPS"
+          },
+          {
+            "id": 77814822,
+            "name": "Twebbles",
+            "class": "DeathKnight",
+            "spec": "Blood",
+            "role": "Tank"
+          },
+          {
+            "id": 88361550,
+            "name": "Fondueoracle",
+            "class": "Paladin",
+            "spec": "Retribution",
+            "role": "DPS"
+          },
+          {
+            "id": 88361556,
+            "name": "Dotus",
+            "class": "Druid",
+            "spec": "Restoration",
+            "role": "Healer"
+          }
+        ],
+        "computedScore": 382.79339583333,
+        "medal": "bronze",
+        "reportsBlacklistForCharacters": [],
+        "speed": {
+          "rank": "~116782",
+          "best": "~116782",
+          "totalParses": 1167826,
+          "rankPercent": 90
+        },
+        "score": {
+          "rank": "~105104",
+          "best": "~105104",
+          "totalParses": 1167826,
+          "rankPercent": 91
+        }
+      },
+      {
+        "fightID": 4,
+        "partition": 1,
+        "zone": 47,
+        "encounter": {
+          "id": 61209,
+          "name": "Skyreach"
+        },
+        "difficulty": 10,
+        "size": 5,
+        "kill": 1,
+        "duration": 1485047,
+        "bracketData": 12,
+        "deaths": 3,
+        "damageTakenExcludingTanks": 123015463,
+        "roles": {
+          "tanks": {
+            "name": "Tanks",
+            "characters": [
+              {
+                "id": 45799040,
+                "name": "Terlahtwo",
+                "server": {
+                  "id": 340,
+                  "name": "Tarren Mill",
+                  "region": "EU"
+                },
+                "class": "Paladin",
+                "spec": "Protection",
+                "amount": 31981.12652000785,
+                "bracketData": 12,
+                "bracket": 11,
+                "rank": "~7397",
+                "best": "~7397",
+                "totalParses": 35224,
+                "bracketPercent": 7,
+                "rankPercent": 79
+              }
+            ]
+          },
+          "healers": {
+            "name": "Healers",
+            "characters": [
+              {
+                "id": 88361556,
+                "name": "Dotus",
+                "server": {
+                  "id": 283,
+                  "name": "Draenor",
+                  "region": "EU"
+                },
+                "class": "Druid",
+                "spec": "Restoration",
+                "amount": 9046.615359991789,
+                "bracketData": 12,
+                "bracket": 11,
+                "rank": "~21296",
+                "best": "~21296",
+                "totalParses": 70989,
+                "bracketPercent": 86,
+                "rankPercent": 70
+              }
+            ]
+          },
+          "dps": {
+            "name": "Damage Dealers",
+            "characters": [
+              {
+                "id": 88361550,
+                "name": "Fondueoracle",
+                "server": {
+                  "id": 283,
+                  "name": "Draenor",
+                  "region": "EU"
+                },
+                "class": "Paladin",
+                "spec": "Retribution",
+                "amount": 76310.76862001419,
+                "bracketData": 12,
+                "bracket": 11,
+                "rank": "~20621",
+                "best": "~20621",
+                "totalParses": 68739,
+                "bracketPercent": 29,
+                "rankPercent": 70
+              },
+              {
+                "id": 38453488,
+                "name": "Datguyfredd",
+                "server": {
+                  "id": 283,
+                  "name": "Draenor",
+                  "region": "EU"
+                },
+                "class": "Rogue",
+                "spec": "Subtlety",
+                "amount": 76478.73636001348,
+                "bracketData": 12,
+                "bracket": 11,
+                "rank": "~5268",
+                "best": "~5268",
+                "totalParses": 21953,
+                "bracketPercent": 31,
+                "rankPercent": 76
+              },
+              {
+                "id": 58818418,
+                "name": "Destroying",
+                "server": {
+                  "id": 283,
+                  "name": "Draenor",
+                  "region": "EU"
+                },
+                "class": "Warlock",
+                "spec": "Demonology",
+                "amount": 88526.75975999236,
+                "bracketData": 12,
+                "bracket": 11,
+                "rank": "~19083",
+                "best": "~19083",
+                "totalParses": 57829,
+                "bracketPercent": 53,
+                "rankPercent": 67
+              }
+            ]
+          }
+        },
+        "bracket": 11,
+        "affixes": [
+          9,
+          10,
+          147
+        ],
+        "team": [
+          {
+            "id": 38453488,
+            "name": "Datguyfredd",
+            "class": "Rogue",
+            "spec": "Subtlety",
+            "role": "DPS"
+          },
+          {
+            "id": 45799040,
+            "name": "Terlahtwo",
+            "class": "Paladin",
+            "spec": "Protection",
+            "role": "Tank"
+          },
+          {
+            "id": 58818418,
+            "name": "Destroying",
+            "class": "Warlock",
+            "spec": "Demonology",
+            "role": "DPS"
+          },
+          {
+            "id": 88361550,
+            "name": "Fondueoracle",
+            "class": "Paladin",
+            "spec": "Retribution",
+            "role": "DPS"
+          },
+          {
+            "id": 88361556,
+            "name": "Dotus",
+            "class": "Druid",
+            "spec": "Restoration",
+            "role": "Healer"
+          }
+        ],
+        "computedScore": 369.35162946429,
+        "medal": "bronze",
+        "reportsBlacklistForCharacters": [],
+        "speed": {
+          "rank": "~224913",
+          "best": "~224913",
+          "totalParses": 1124567,
+          "rankPercent": 80
+        },
+        "score": {
+          "rank": "~157439",
+          "best": "~157439",
+          "totalParses": 1124567,
+          "rankPercent": 86
+        }
+      },
+      {
+        "fightID": 5,
+        "partition": 1,
+        "zone": 47,
+        "encounter": {
+          "id": 112526,
+          "name": "Algeth'ar Academy"
+        },
+        "difficulty": 10,
+        "size": 5,
+        "kill": 1,
+        "duration": 2146801,
+        "bracketData": 13,
+        "deaths": 10,
+        "damageTakenExcludingTanks": 166651710,
+        "roles": {
+          "tanks": {
+            "name": "Tanks",
+            "characters": [
+              {
+                "id": 45799040,
+                "name": "Terlahtwo",
+                "server": {
+                  "id": 340,
+                  "name": "Tarren Mill",
+                  "region": "EU"
+                },
+                "class": "Paladin",
+                "spec": "Protection",
+                "amount": 26804.526829987764,
+                "bracketData": 13,
+                "bracket": 12,
+                "rank": "~4757",
+                "best": "-",
+                "totalParses": 43254,
+                "bracketPercent": 0,
+                "rankPercent": 89
+              }
+            ]
+          },
+          "healers": {
+            "name": "Healers",
+            "characters": [
+              {
+                "id": 88361556,
+                "name": "Dotus",
+                "server": {
+                  "id": 283,
+                  "name": "Draenor",
+                  "region": "EU"
+                },
+                "class": "Druid",
+                "spec": "Restoration",
+                "amount": 8213.80649998784,
+                "bracketData": 13,
+                "bracket": 12,
+                "rank": "~15500",
+                "best": "-",
+                "totalParses": 77503,
+                "bracketPercent": 72,
+                "rankPercent": 80
+              }
+            ]
+          },
+          "dps": {
+            "name": "Damage Dealers",
+            "characters": [
+              {
+                "id": 88361550,
+                "name": "Fondueoracle",
+                "server": {
+                  "id": 283,
+                  "name": "Draenor",
+                  "region": "EU"
+                },
+                "class": "Paladin",
+                "spec": "Retribution",
+                "amount": 80281.8635700047,
+                "bracketData": 13,
+                "bracket": 12,
+                "rank": "~12444",
+                "best": "-",
+                "totalParses": 77779,
+                "bracketPercent": 7,
+                "rankPercent": 84
+              },
+              {
+                "id": 38453488,
+                "name": "Datguyfredd",
+                "server": {
+                  "id": 283,
+                  "name": "Draenor",
+                  "region": "EU"
+                },
+                "class": "Rogue",
+                "spec": "Subtlety",
+                "amount": 81279.7283000052,
+                "bracketData": 13,
+                "bracket": 12,
+                "rank": "~2417",
+                "best": "-",
+                "totalParses": 21977,
+                "bracketPercent": 7,
+                "rankPercent": 89
+              },
+              {
+                "id": 58818418,
+                "name": "Destroying",
+                "server": {
+                  "id": 283,
+                  "name": "Draenor",
+                  "region": "EU"
+                },
+                "class": "Warlock",
+                "spec": "Demonology",
+                "amount": 92031.98061001301,
+                "bracketData": 13,
+                "bracket": 12,
+                "rank": "~15942",
+                "best": "-",
+                "totalParses": 61316,
+                "bracketPercent": 15,
+                "rankPercent": 74
+              }
+            ]
+          }
+        },
+        "bracket": 12,
+        "affixes": [
+          9,
+          10,
+          147
+        ],
+        "team": [
+          {
+            "id": 38453488,
+            "name": "Datguyfredd",
+            "class": "Rogue",
+            "spec": "Subtlety",
+            "role": "DPS"
+          },
+          {
+            "id": 45799040,
+            "name": "Terlahtwo",
+            "class": "Paladin",
+            "spec": "Protection",
+            "role": "Tank"
+          },
+          {
+            "id": 58818418,
+            "name": "Destroying",
+            "class": "Warlock",
+            "spec": "Demonology",
+            "role": "DPS"
+          },
+          {
+            "id": 88361550,
+            "name": "Fondueoracle",
+            "class": "Paladin",
+            "spec": "Retribution",
+            "role": "DPS"
+          },
+          {
+            "id": 88361556,
+            "name": "Dotus",
+            "class": "Druid",
+            "spec": "Restoration",
+            "role": "Healer"
+          }
+        ],
+        "computedScore": 312.76998901367,
+        "medal": "none",
+        "reportsBlacklistForCharacters": [],
+        "speed": {
+          "rank": "~76121",
+          "best": "~76121",
+          "totalParses": 692014,
+          "rankPercent": 89
+        },
+        "score": {
+          "rank": "~435968",
+          "best": "~435968",
+          "totalParses": 692014,
+          "rankPercent": 37
+        }
+      }
+    ]
+  },
+  "code": "1Q4WaCc7TL8BqKpX"
+}

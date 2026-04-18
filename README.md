@@ -6,25 +6,15 @@ designed to run on a Raspberry Pi connected to a TV. It shows:
 - The **latest dungeon** in your current log report (per-player Key % + DPS/HPS).
 - The **session Key % average** across every completed dungeon in the report.
 
-The dashboard polls the Warcraft Logs v2 GraphQL API every minute, so new
-pulls appear automatically without interaction.
+The numbers shown are scraped directly from the Warcraft Logs report website,
+so they always match what you see in your browser. Just paste a report URL —
+the dashboard automatically picks the most recent completed run.
 
 ## Setup
 
-### 1. Create a Warcraft Logs API client
-
-1. Sign in and go to <https://www.warcraftlogs.com/api/clients/>.
-2. Click **Create Client**.
-3. Name: anything (e.g. `lan-dashboard`). Redirect URL: `http://localhost`.
-4. Leave **Public Client** unchecked.
-5. Copy the **Client ID** and **Client Secret**.
-
-### 2. Configure and install
+### 1. Install
 
 ```bash
-cp .env.example .env
-# edit .env and fill in WCL_CLIENT_ID / WCL_CLIENT_SECRET
-
 python -m venv .venv
 # Windows
 .venv\Scripts\activate
@@ -34,17 +24,10 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-If you want user-authenticated API access (recommended for best data parity),
-also set these values in `.env`:
+No Warcraft Logs API key is required. The dashboard talks to the public
+report pages using a Chrome TLS fingerprint via `curl_cffi`.
 
-```bash
-WCL_OAUTH_REDIRECT_URI=http://localhost:8080/auth/wcl/callback
-FLASK_SECRET_KEY=replace_with_a_long_random_string
-```
-
-The redirect URI must be added to your Warcraft Logs API client settings.
-
-### 3. Run
+### 2. Run
 
 ```bash
 python app.py
@@ -52,9 +35,6 @@ python app.py
 
 Open <http://localhost:8080> and paste a report URL (or code) — for example
 `https://www.warcraftlogs.com/reports/ba8GyNv4nCKqgt7V`.
-
-If OAuth is configured, click **Connect WCL** in the header to authorize the
-dashboard against your Warcraft Logs account.
 
 ## Raspberry Pi kiosk tips
 

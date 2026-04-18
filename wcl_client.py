@@ -5,6 +5,8 @@ queries against the public API. Tokens are cached in-memory until expiry.
 """
 from __future__ import annotations
 
+import base64
+import hashlib
 import re
 import time
 from dataclasses import dataclass
@@ -124,13 +126,28 @@ class WCLClient:
             raise RuntimeError("Missing user access token")
         return self._query_endpoint(USER_API_URL, access_token, gql, variables)
 
-    def build_authorize_url(self, redirect_uri: str, state: str) -> str:
+    @staticmethod
+    def build_pkce_challenge(code_verifier: str) -> str:
+        digest = hashlib.sha256(code_verifier.encode("ascii")).digest()
+        return base64.urlsafe_b64encode(digest).decode("ascii").rstrip("=")
+
+    def build_authorize_url(
+        self,
+        redirect_uri: str,
+        state: str,
+        code_challenge: str | None = None,
+        code_challenge_method: str | None = None,
+    ) -> str:
         params = {
             "client_id": self._client_id,
             "response_type": "code",
             "redirect_uri": redirect_uri,
             "state": state,
         }
+        if code_challenge:
+            params["code_challenge"] = code_challenge
+        if code_challenge_method:
+            params["code_challenge_method"] = code_challenge_method
         return f"{AUTHORIZE_URL}?{urlencode(params)}"
 
     def exchange_authorization_code(self, code: str, redirect_uri: str) -> dict[str, Any]:
@@ -142,6 +159,45 @@ class WCLClient:
                 "redirect_uri": redirect_uri,
             },
             auth=(self._client_id, self._client_secret),
+            timeout=self._timeout,
+        )
+        try:
+            payload = resp.json()
+        except ValueError:
+            payload = {}
+
+        if not resp.ok:
+            if isinstance(payload, dict):
+                err = payload.get("error")
+                desc = payload.get("error_description") or payload.get("message")
+                if err or desc:
+                    raise RuntimeError(f"WCL OAuth token error: {err or 'unknown'} ({desc or 'no description'})")
+            resp.raise_for_status()
+
+        if not isinstance(payload, dict) or not payload.get("access_token"):
+            err = payload.get("error") if isinstance(payload, dict) else "invalid_response"
+            desc = (
+                payload.get("error_description") or payload.get("message")
+                if isinstance(payload, dict) else "response was not JSON"
+            )
+            raise RuntimeError(f"WCL OAuth token error: {err or 'missing_access_token'} ({desc or 'access token missing'})")
+        return payload
+
+    def exchange_authorization_code_pkce(
+        self,
+        code: str,
+        redirect_uri: str,
+        code_verifier: str,
+    ) -> dict[str, Any]:
+        resp = requests.post(
+            TOKEN_URL,
+            data={
+                "grant_type": "authorization_code",
+                "code": code,
+                "redirect_uri": redirect_uri,
+                "client_id": self._client_id,
+                "code_verifier": code_verifier,
+            },
             timeout=self._timeout,
         )
         try:
