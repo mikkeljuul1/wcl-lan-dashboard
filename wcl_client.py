@@ -181,22 +181,20 @@ class WCLClient:
     def get_ilvl_bracket_parses(
         self,
         lookups: list[dict[str, Any]],
-    ) -> dict[tuple[int, int], float]:
-        """Return ilvl-bracket percentile for each (characterId, fightId).
+    ) -> dict[tuple[int, int], dict[str, float]]:
+        """Return per-character, per-fight overall + bracket (Key %) parses.
 
         ``lookups`` items are dicts with keys:
           * ``characterId`` (int) — WCL character id
           * ``encounterId`` (int)
-          * ``fightId``     (int) — the fight id within the *session* report
+          * ``fightId``     (int) — fight id within the *session* report
           * ``absStartTime``(int) — absolute epoch ms when the fight began
           * ``metric``      (str) — "dps" | "hps"
 
-        One GraphQL request is issued per unique (characterId, metric) pair,
-        aliasing one ``encounterRankings`` field per encounter the character
-        played. We match by absolute ``startTime`` (±60 s tolerance) because
-        each player uploads their own WCL report for the same M+ run, so the
+        Returns ``{(characterId, fightId): {"overall": float, "bracket": float}}``.
+        Each player uploads their own WCL report for the same M+ run, so the
         ``report.code`` on their personal rank entries will differ from the
-        session report's code.
+        session report's code — we match by absolute ``startTime`` (±60 s).
         """
         # Group by (character_id, metric) -> set of encounter_ids
         grouped: dict[tuple[int, str], set[int]] = {}
@@ -212,16 +210,20 @@ class WCLClient:
             grouped.setdefault((cid, metric), set()).add(eid)
             per_fight[(cid, fid)] = abs_start
 
-        out: dict[tuple[int, int], float] = {}
+        out: dict[tuple[int, int], dict[str, float]] = {}
         for (cid, metric), enc_ids in grouped.items():
-            field_lines = [
-                (
-                    f"e{eid}: encounterRankings("
+            field_lines: list[str] = []
+            for eid in enc_ids:
+                field_lines.append(
+                    f"o{eid}: encounterRankings("
+                    f"encounterID: {eid}, byBracket: false, "
+                    f"metric: {metric}, includePrivateLogs: true)"
+                )
+                field_lines.append(
+                    f"b{eid}: encounterRankings("
                     f"encounterID: {eid}, byBracket: true, "
                     f"metric: {metric}, includePrivateLogs: true)"
                 )
-                for eid in enc_ids
-            ]
             gql = (
                 "query($id: Int!) {\n"
                 "  characterData {\n"
@@ -234,29 +236,27 @@ class WCLClient:
             try:
                 data = self.query(gql, {"id": cid})
             except Exception:
-                # One bad character shouldn't break the whole dashboard.
                 continue
             char = ((data.get("characterData") or {}).get("character")) or {}
-            # Build list of (fight_id, abs_start) expected for this character.
             wanted = [
                 (fid, abs_start)
                 for (c, fid), abs_start in per_fight.items()
                 if c == cid
             ]
             for eid in enc_ids:
-                er = char.get(f"e{eid}") or {}
-                for rk in (er.get("ranks") or []):
-                    rk_start = rk.get("startTime")
-                    if not isinstance(rk_start, (int, float)):
-                        continue
-                    for fid, abs_start in wanted:
-                        # 60 s tolerance — logs from different players can
-                        # differ by a few hundred ms (combat start timestamp).
-                        if abs(rk_start - abs_start) <= 60_000:
-                            pct = rk.get("rankPercent")
-                            if isinstance(pct, (int, float)):
-                                prev = out.get((cid, fid))
-                                if prev is None or pct > prev:
-                                    out[(cid, fid)] = float(pct)
-                            break
+                for prefix, key in (("o", "overall"), ("b", "bracket")):
+                    er = char.get(f"{prefix}{eid}") or {}
+                    for rk in (er.get("ranks") or []):
+                        rk_start = rk.get("startTime")
+                        if not isinstance(rk_start, (int, float)):
+                            continue
+                        for fid, abs_start in wanted:
+                            if abs(rk_start - abs_start) <= 60_000:
+                                pct = rk.get("rankPercent")
+                                if isinstance(pct, (int, float)):
+                                    slot = out.setdefault((cid, fid), {})
+                                    prev = slot.get(key)
+                                    if prev is None or pct > prev:
+                                        slot[key] = float(pct)
+                                break
         return out

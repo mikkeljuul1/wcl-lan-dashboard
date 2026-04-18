@@ -164,12 +164,18 @@ def _characters_from_tables(
 def build_dashboard(
     report: dict[str, Any],
     fight_tables: dict[int, dict[str, Any]] | None = None,
+    char_parses: dict[tuple[int, int], dict[str, float]] | None = None,
 ) -> dict[str, Any]:
     """Shape a raw WCL report into the payload consumed by the frontend.
 
     Averaging (per-dungeon and session-wide) is intentionally done on the
     client so that role filters (DPS / healer / tank) can be toggled without
     a round-trip to the server.
+
+    ``char_parses`` overrides ``rankPercent`` and ``bracketPercent`` with
+    per-character values queried from ``characterData.character`` — the
+    session report's own ``rankings`` field returns group-level placeholders
+    for M+, not real per-player parses.
     """
     rankings_root = report.get("rankings") or {}
     # `rankings` can be returned as a dict or — for some reports — as None.
@@ -178,9 +184,11 @@ def build_dashboard(
     ) else []
     rankings_by_fight = {fr.get("fightID"): fr for fr in fight_rankings}
 
-    # Build a name -> role map from whichever fights do have ranking data,
-    # so fights missing rankings can still attribute role correctly.
+    # Build name -> role and name -> id maps from whichever fights have
+    # ranking data. Fights without rankings can still attribute role and
+    # character id correctly by looking up the player's name.
     role_by_name: dict[str, str] = {}
+    id_by_name: dict[str, int] = {}
     for fr in fight_rankings:
         roles = fr.get("roles") or {}
         for role_key, label in (("tanks", "Tank"), ("healers", "Healer"), ("dps", "DPS")):
@@ -188,6 +196,9 @@ def build_dashboard(
                 name = ch.get("name")
                 if name:
                     role_by_name.setdefault(name, label)
+                    cid = ch.get("id")
+                    if isinstance(cid, int):
+                        id_by_name.setdefault(name, cid)
 
     dungeons: list[dict[str, Any]] = []
     for fight in report.get("fights") or []:
@@ -203,6 +214,13 @@ def build_dashboard(
         # the dungeon still shows up with DPS/HPS (just without parse %).
         if not characters and fight_tables and fight_id in fight_tables:
             characters = _characters_from_tables(fight_tables[fight_id], role_by_name)
+        # Backfill character id for table-sourced rows using the id map built
+        # from any ranked fight in the session.
+        for c in characters:
+            if c.get("id") is None:
+                cid = id_by_name.get(c.get("name"))
+                if cid:
+                    c["id"] = cid
         dungeon = {
             "fightId": fight_id,
             "name": encounter.get("name") or fight.get("name"),
@@ -218,6 +236,21 @@ def build_dashboard(
         }
         if fight_tables and fight_id in fight_tables:
             _merge_table(dungeon, fight_tables[fight_id])
+        # Override rankPercent / bracketPercent with real per-character parses.
+        if char_parses:
+            for c in dungeon["characters"]:
+                cid = c.get("id")
+                if not isinstance(cid, int):
+                    continue
+                parses = char_parses.get((cid, fight_id))
+                if not parses:
+                    continue
+                overall = parses.get("overall")
+                bracket = parses.get("bracket")
+                if overall is not None:
+                    c["rankPercent"] = round(overall, 1)
+                if bracket is not None:
+                    c["bracketPercent"] = round(bracket, 1)
         dungeon["characters"] = sorted(
             dungeon["characters"],
             key=lambda c: (c.get("rankPercent") or -1),
@@ -284,10 +317,54 @@ def dashboard() -> Any:
             except Exception:
                 # Non-fatal: fall back to parse-only display.
                 app.logger.exception("Fetching fight tables failed")
+
+        # Build per-character parse lookups. WCL's report.rankings field only
+        # returns group-level placeholders for M+, so we query each character's
+        # personal encounterRankings and match by absolute fight start time.
+        report_start = report.get("startTime") or 0
+        fight_by_id = {
+            f.get("id"): f for f in (report.get("fights") or []) if f.get("kill") is True
+        }
+        fight_rankings = (
+            (report.get("rankings") or {}).get("data") or []
+            if isinstance(report.get("rankings"), dict) else []
+        )
+        # name -> (id, encounterId, metric_role)
+        player_info: dict[str, dict[str, Any]] = {}
+        for fr in fight_rankings:
+            enc_id = (fr.get("encounter") or {}).get("id")
+            for role_key, metric in (("tanks", "dps"), ("dps", "dps"), ("healers", "hps")):
+                for ch in ((fr.get("roles") or {}).get(role_key) or {}).get("characters") or []:
+                    name = ch.get("name")
+                    cid = ch.get("id")
+                    if name and isinstance(cid, int) and isinstance(enc_id, int):
+                        player_info.setdefault(
+                            name, {"id": cid, "encounterId": enc_id, "metric": metric}
+                        )
+        # Build lookups: one (character, fight) pair per completed fight per player.
+        lookups: list[dict[str, Any]] = []
+        for fid, fight in fight_by_id.items():
+            abs_start = (fight.get("startTime") or 0) + report_start
+            enc_id = fight.get("encounterID")
+            for name, info in player_info.items():
+                eid = enc_id if isinstance(enc_id, int) else info["encounterId"]
+                lookups.append({
+                    "characterId": info["id"],
+                    "encounterId": eid,
+                    "fightId": fid,
+                    "absStartTime": abs_start,
+                    "metric": info["metric"],
+                })
+        char_parses: dict[tuple[int, int], dict[str, float]] = {}
+        if lookups:
+            try:
+                char_parses = client.get_ilvl_bracket_parses(lookups)
+            except Exception:
+                app.logger.exception("Fetching per-character parses failed")
     except Exception as exc:  # surface API errors as JSON for the frontend
         app.logger.exception("WCL fetch failed")
         return jsonify({"error": str(exc)}), 502
-    return jsonify(build_dashboard(report, fight_tables))
+    return jsonify(build_dashboard(report, fight_tables, char_parses))
 
 
 @app.route("/healthz")
